@@ -158,6 +158,7 @@ const state = {
   elapsedTime: 0,
   fpsFrames: 0,
   fpsTime: 0,
+  frameIntervalSamples: [],
   running: false,
   webGpuAvailable: 'gpu' in navigator,
   logs: [],
@@ -742,6 +743,7 @@ class WebGPURenderer {
     this.mvp = new Float32Array(16);
     this.proj = new Float32Array(16);
     this.view = new Float32Array(16);
+    this.uniformPayload = new Float32Array(24);
 
     this.vertexBuffer = device.createBuffer({ size: geometry.positions.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(this.vertexBuffer, 0, geometry.positions);
@@ -858,10 +860,10 @@ class WebGPURenderer {
     perspective(this.proj, Math.PI / 4, width / height, 0.1, 100);
     lookAt(this.view, [0, 0, 16], [0, 0, 0], [0, 1, 0]);
     multiplyMat4(this.mvp, this.proj, this.view);
-    const uniformPayload = new Float32Array(24);
-    uniformPayload.set(this.mvp, 0);
-    uniformPayload[16] = time;
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformPayload);
+    this.uniformPayload.fill(0);
+    this.uniformPayload.set(this.mvp, 0);
+    this.uniformPayload[16] = time;
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformPayload);
     this.device.queue.writeBuffer(this.instanceBuffer, 0, instanceData);
 
     const encoder = this.device.createCommandEncoder();
@@ -921,6 +923,7 @@ async function rebuildScene() {
   state.lastTimestamp = 0;
   state.fpsFrames = 0;
   state.fpsTime = 0;
+  state.frameIntervalSamples = [];
   state.elapsedTime = 0;
   setLastError('');
 
@@ -983,7 +986,19 @@ async function rebuildScene() {
   }
 }
 
-function formatMs(value) { return `${value.toFixed(2)}ms`; }
+function formatDurationMs(value) {
+  if (value < 0.1) return `${(value * 1000).toFixed(0)}μs`;
+  return `${value.toFixed(2)}ms`;
+}
+
+function formatFpsWithJitter(fps, samples) {
+  if (!samples.length) return fps.toFixed(1);
+  const avg = samples.reduce((sum, x) => sum + x, 0) / samples.length;
+  const variance = samples.reduce((sum, x) => sum + (x - avg) ** 2, 0) / samples.length;
+  const sigma = Math.sqrt(variance);
+  if (sigma < 0.5) return fps.toFixed(1);
+  return `${fps.toFixed(1)} (±${sigma.toFixed(1)}ms)`;
+}
 
 function tick(timestamp) {
   if (!state.running || !state.renderer || !state.system || !state.canvas) return;
@@ -1010,14 +1025,16 @@ function tick(timestamp) {
 
     state.fpsFrames += 1;
     state.fpsTime += dt;
+    state.frameIntervalSamples.push(dt * 1000);
+    if (state.frameIntervalSamples.length > 30) state.frameIntervalSamples.shift();
     if (state.fpsTime >= 0.5) {
-      elements.fpsValue.textContent = (state.fpsFrames / state.fpsTime).toFixed(1);
+      elements.fpsValue.textContent = formatFpsWithJitter(state.fpsFrames / state.fpsTime, state.frameIntervalSamples);
       state.fpsFrames = 0;
       state.fpsTime = 0;
     }
-    elements.frameValue.textContent = formatMs(frameCost);
-    elements.updateValue.textContent = formatMs(updateCost);
-    elements.renderValue.textContent = formatMs(renderCost);
+    elements.frameValue.textContent = formatDurationMs(frameCost);
+    elements.updateValue.textContent = formatDurationMs(updateCost);
+    elements.renderValue.textContent = formatDurationMs(renderCost);
 
     state.animationFrame = requestAnimationFrame(tick);
   } catch (error) {
