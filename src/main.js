@@ -16,6 +16,11 @@ const COMPUTE_OPTIONS = [
   { value: 'js', label: 'JavaScript' },
   { value: 'wasm', label: 'WebAssembly' },
 ];
+const BENCHMARK_MODE_OPTIONS = [
+  { value: 'combined', label: '综合模式' },
+  { value: 'render', label: '纯渲染模式' },
+  { value: 'compute', label: '纯计算模式' },
+];
 const STORAGE_KEY = 'render-test-mesh-config-v1';
 const LOG_LIMIT = 100;
 const INSTANCE_STRIDE = 8; // x y z vx vy vz phase scale
@@ -36,6 +41,10 @@ app.innerHTML = `
       </div>
 
       <div class="form-grid">
+        <div class="field">
+          <label for="benchmarkModeSelect">测试模式</label>
+          <select id="benchmarkModeSelect"></select>
+        </div>
         <div class="field">
           <label for="rendererSelect">渲染后端</label>
           <select id="rendererSelect"></select>
@@ -117,6 +126,7 @@ app.innerHTML = `
 
 const elements = {
   canvasHost: document.querySelector('#canvasHost'),
+  benchmarkModeSelect: document.querySelector('#benchmarkModeSelect'),
   rendererSelect: document.querySelector('#rendererSelect'),
   computeSelect: document.querySelector('#computeSelect'),
   meshSelect: document.querySelector('#meshSelect'),
@@ -143,6 +153,7 @@ const elements = {
 
 const state = {
   canvas: null,
+  benchmarkMode: 'combined',
   requestedRenderer: 'webgl',
   computeMode: 'js',
   meshLevel: 'high',
@@ -159,6 +170,12 @@ const state = {
   fpsFrames: 0,
   fpsTime: 0,
   frameIntervalSamples: [],
+  metricWindowTime: 0,
+  metricWindowFrames: 0,
+  metricWindowFrameCost: 0,
+  metricWindowUpdateCost: 0,
+  metricWindowRenderCost: 0,
+  staticInstanceData: null,
   running: false,
   webGpuAvailable: 'gpu' in navigator,
   logs: [],
@@ -252,6 +269,7 @@ function applySavedConfig() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const saved = JSON.parse(raw);
+    if (saved.benchmarkMode && BENCHMARK_MODE_OPTIONS.some((x) => x.value === saved.benchmarkMode)) elements.benchmarkModeSelect.value = saved.benchmarkMode;
     if (saved.renderer && RENDERER_OPTIONS.some((x) => x.value === saved.renderer)) elements.rendererSelect.value = saved.renderer;
     if (saved.compute && COMPUTE_OPTIONS.some((x) => x.value === saved.compute)) elements.computeSelect.value = saved.compute;
     if (saved.mesh && MESH_OPTIONS.some((x) => x.value === saved.mesh)) elements.meshSelect.value = saved.mesh;
@@ -268,6 +286,7 @@ function persistConfig() {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
+        benchmarkMode: elements.benchmarkModeSelect.value,
         renderer: elements.rendererSelect.value,
         compute: elements.computeSelect.value,
         mesh: elements.meshSelect.value,
@@ -281,6 +300,7 @@ function persistConfig() {
   }
 }
 
+for (const option of BENCHMARK_MODE_OPTIONS) elements.benchmarkModeSelect.insertAdjacentHTML('beforeend', `<option value="${option.value}">${option.label}</option>`);
 for (const option of RENDERER_OPTIONS) elements.rendererSelect.insertAdjacentHTML('beforeend', `<option value="${option.value}">${option.label}</option>`);
 for (const option of COMPUTE_OPTIONS) elements.computeSelect.insertAdjacentHTML('beforeend', `<option value="${option.value}">${option.label}</option>`);
 for (const option of MESH_OPTIONS) elements.meshSelect.insertAdjacentHTML('beforeend', `<option value="${option.value}">${option.label}</option>`);
@@ -288,6 +308,7 @@ for (const option of INSTANCE_OPTIONS) elements.instanceSelect.insertAdjacentHTM
 for (const option of STRESS_LEVEL_OPTIONS) elements.stressSelect.insertAdjacentHTML('beforeend', `<option value="${option}">${option}x</option>`);
 for (const option of SCALE_OPTIONS) elements.scaleSelect.insertAdjacentHTML('beforeend', `<option value="${option}">${option}x</option>`);
 
+elements.benchmarkModeSelect.value = 'combined';
 elements.rendererSelect.value = 'webgl';
 elements.computeSelect.value = 'js';
 elements.meshSelect.value = 'high';
@@ -920,13 +941,20 @@ async function rebuildScene() {
   state.renderer?.destroy?.();
   state.renderer = null;
   state.system = null;
+  state.staticInstanceData = null;
   state.lastTimestamp = 0;
   state.fpsFrames = 0;
   state.fpsTime = 0;
   state.frameIntervalSamples = [];
+  state.metricWindowTime = 0;
+  state.metricWindowFrames = 0;
+  state.metricWindowFrameCost = 0;
+  state.metricWindowUpdateCost = 0;
+  state.metricWindowRenderCost = 0;
   state.elapsedTime = 0;
   setLastError('');
 
+  state.benchmarkMode = elements.benchmarkModeSelect.value;
   state.requestedRenderer = elements.rendererSelect.value;
   state.computeMode = elements.computeSelect.value;
   state.meshLevel = elements.meshSelect.value;
@@ -944,12 +972,18 @@ async function rebuildScene() {
 
   try {
     setStatus('创建 canvas / renderer ...');
-    const canvas = createFreshCanvas();
     state.geometry = createTorusKnotGeometry(state.meshLevel);
-    state.renderer = await createRenderer(rendererMode, canvas, state.geometry);
     state.system = await createInstanceSystem(state.computeMode, state.instanceCount, state.instanceScale);
-    state.actualRenderer = state.renderer.type;
-    elements.modeChip.textContent = `模式：${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
+    if (state.benchmarkMode !== 'compute') {
+      const canvas = createFreshCanvas();
+      state.renderer = await createRenderer(rendererMode, canvas, state.geometry);
+      state.actualRenderer = state.renderer.type;
+    } else {
+      elements.canvasHost.innerHTML = '<div class="canvas-placeholder">纯计算模式：当前不进行复杂网格渲染，只统计 update 路径。</div>';
+      state.actualRenderer = 'N/A';
+    }
+    state.staticInstanceData = new Float32Array(state.system.getRenderData());
+    elements.modeChip.textContent = `模式：${state.benchmarkMode.toUpperCase()} · ${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
     elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
     elements.meshChip.textContent = `网格：${state.meshLevel} · ${state.instanceCount} 实例 · 压力 ${state.stressLevel}x`;
     updateSupportChip(state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持', !state.webGpuAvailable);
@@ -964,8 +998,9 @@ async function rebuildScene() {
         const canvas = createFreshCanvas();
         state.renderer = await createRenderer('webgl', canvas, state.geometry || createTorusKnotGeometry(state.meshLevel));
         state.system = await createInstanceSystem(state.computeMode, state.instanceCount, state.instanceScale);
+        state.staticInstanceData = new Float32Array(state.system.getRenderData());
         state.actualRenderer = state.renderer.type;
-        elements.modeChip.textContent = `模式：${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
+        elements.modeChip.textContent = `模式：${state.benchmarkMode.toUpperCase()} · ${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
         elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
         elements.meshChip.textContent = `网格：${state.meshLevel} · ${state.instanceCount} 实例 · 压力 ${state.stressLevel}x`;
         updateSupportChip('API 可见，但当前环境初始化失败', true);
@@ -1001,9 +1036,10 @@ function formatFpsWithJitter(fps, samples) {
 }
 
 function tick(timestamp) {
-  if (!state.running || !state.renderer || !state.system || !state.canvas) return;
+  if (!state.running || !state.system) return;
   try {
-    const { width, height } = getCanvasSize();
+    const hasRenderer = Boolean(state.renderer && state.canvas && state.benchmarkMode !== 'compute');
+    const { width, height } = hasRenderer ? getCanvasSize() : { width: 1, height: 1 };
     const dt = state.lastTimestamp ? Math.min((timestamp - state.lastTimestamp) / 1000, 0.033) : 0.016;
     state.lastTimestamp = timestamp;
     state.elapsedTime += dt;
@@ -1011,12 +1047,18 @@ function tick(timestamp) {
     const frameStart = performance.now();
     const updateStart = performance.now();
     const subDt = dt / state.stressLevel;
-    for (let i = 0; i < state.stressLevel; i += 1) {
-      state.system.update(subDt, state.elapsedTime + i * subDt);
+    let instanceData = state.staticInstanceData;
+    if (state.benchmarkMode !== 'render') {
+      for (let i = 0; i < state.stressLevel; i += 1) {
+        state.system.update(subDt, state.elapsedTime + i * subDt);
+      }
+      instanceData = state.system.getRenderData();
+      if (state.benchmarkMode === 'combined') state.staticInstanceData = instanceData;
     }
-    const instanceData = state.system.getRenderData();
     const renderStart = performance.now();
-    state.renderer.render(instanceData, width, height, state.elapsedTime);
+    if (hasRenderer) {
+      state.renderer.render(instanceData, width, height, state.elapsedTime);
+    }
     const renderEnd = performance.now();
 
     const frameCost = renderEnd - frameStart;
@@ -1027,14 +1069,27 @@ function tick(timestamp) {
     state.fpsTime += dt;
     state.frameIntervalSamples.push(dt * 1000);
     if (state.frameIntervalSamples.length > 30) state.frameIntervalSamples.shift();
+    state.metricWindowTime += dt;
+    state.metricWindowFrames += 1;
+    state.metricWindowFrameCost += frameCost;
+    state.metricWindowUpdateCost += updateCost;
+    state.metricWindowRenderCost += renderCost;
     if (state.fpsTime >= 0.5) {
       elements.fpsValue.textContent = formatFpsWithJitter(state.fpsFrames / state.fpsTime, state.frameIntervalSamples);
       state.fpsFrames = 0;
       state.fpsTime = 0;
     }
-    elements.frameValue.textContent = formatDurationMs(frameCost);
-    elements.updateValue.textContent = formatDurationMs(updateCost);
-    elements.renderValue.textContent = formatDurationMs(renderCost);
+    if (state.metricWindowTime >= 0.25) {
+      const denom = Math.max(1, state.metricWindowFrames);
+      elements.frameValue.textContent = formatDurationMs(state.metricWindowFrameCost / denom);
+      elements.updateValue.textContent = formatDurationMs(state.metricWindowUpdateCost / denom);
+      elements.renderValue.textContent = formatDurationMs(state.metricWindowRenderCost / denom);
+      state.metricWindowTime = 0;
+      state.metricWindowFrames = 0;
+      state.metricWindowFrameCost = 0;
+      state.metricWindowUpdateCost = 0;
+      state.metricWindowRenderCost = 0;
+    }
 
     state.animationFrame = requestAnimationFrame(tick);
   } catch (error) {
@@ -1045,11 +1100,11 @@ function tick(timestamp) {
   }
 }
 
-for (const control of [elements.rendererSelect, elements.computeSelect, elements.meshSelect, elements.instanceSelect, elements.stressSelect, elements.scaleSelect]) {
+for (const control of [elements.benchmarkModeSelect, elements.rendererSelect, elements.computeSelect, elements.meshSelect, elements.instanceSelect, elements.stressSelect, elements.scaleSelect]) {
   control.addEventListener('change', rebuildScene);
 }
 window.addEventListener('resize', () => {
-  if (!state.running || !state.canvas) return;
+  if (!state.running || !state.canvas || state.benchmarkMode === 'compute') return;
   getCanvasSize();
 });
 
