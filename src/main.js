@@ -751,8 +751,15 @@ class WebGPURenderer {
     device.queue.writeBuffer(this.indexBuffer, 0, geometry.indices);
     this.instanceCapacity = 5 * 4;
     this.instanceBuffer = device.createBuffer({ size: this.instanceCapacity, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    this.uniformBuffer = device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     const shader = device.createShaderModule({
       code: `
+        struct Uniforms {
+          viewProj : mat4x4<f32>,
+          time : f32,
+          _pad0 : vec3<f32>,
+        };
+        @group(0) @binding(0) var<uniform> uniforms : Uniforms;
         struct VSIn {
           @location(0) position : vec3<f32>,
           @location(1) normal : vec3<f32>,
@@ -774,16 +781,13 @@ class WebGPURenderer {
           return mat3x3<f32>(vec3<f32>(1.0,0.0,0.0), vec3<f32>(0.0,c,-s), vec3<f32>(0.0,s,c));
         }
         @vertex fn vsMain(input : VSIn) -> VSOut {
-          let angle = input.phase;
+          let angle = uniforms.time * 0.8 + input.phase;
           let rot = rotY(angle) * rotX(angle * 0.7);
-          let world = rot * (input.position * input.scale) + input.offset;
-          let cameraZ = 18.0;
-          let viewZ = cameraZ - world.z;
-          let invZ = 1.0 / max(viewZ, 0.1);
+          let pos = rot * (input.position * input.scale) + input.offset;
           var out : VSOut;
-          out.position = vec4<f32>(world.x * invZ * 1.2, world.y * invZ * 1.2, clamp(1.0 - viewZ / 32.0, 0.0, 1.0), 1.0);
+          out.position = uniforms.viewProj * vec4<f32>(pos, 1.0);
           out.normal = normalize(rot * input.normal);
-          out.color = 0.5 + 0.5 * cos(vec3<f32>(0.0, 2.1, 4.2) + input.phase);
+          out.color = 0.5 + 0.5 * cos(vec3<f32>(0.0, 2.1, 4.2) + input.phase + uniforms.time * 0.2);
           return out;
         }
         @fragment fn fsMain(input : VSOut) -> @location(0) vec4<f32> {
@@ -795,8 +799,17 @@ class WebGPURenderer {
       `,
     });
 
+    this.bindGroupLayout = device.createBindGroupLayout({
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX,
+        buffer: { type: 'uniform', minBindingSize: 96 },
+      }],
+    });
+    this.pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] });
+
     this.pipeline = device.createRenderPipeline({
-      layout: 'auto',
+      layout: this.pipelineLayout,
       vertex: {
         module: shader,
         entryPoint: 'vsMain',
@@ -819,6 +832,10 @@ class WebGPURenderer {
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
     });
 
+    this.bindGroup = device.createBindGroup({
+      layout: this.bindGroupLayout,
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer, offset: 0, size: 96 } }],
+    });
     this.depthTexture = null;
   }
   ensureInstanceBuffer(byteLength) {
@@ -838,6 +855,13 @@ class WebGPURenderer {
   render(instanceData, width, height, time) {
     this.ensureInstanceBuffer(instanceData.byteLength);
     this.ensureDepth(width, height);
+    perspective(this.proj, Math.PI / 4, width / height, 0.1, 100);
+    lookAt(this.view, [0, 0, 16], [0, 0, 0], [0, 1, 0]);
+    multiplyMat4(this.mvp, this.proj, this.view);
+    const uniformPayload = new Float32Array(24);
+    uniformPayload.set(this.mvp, 0);
+    uniformPayload[16] = time;
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformPayload);
     this.device.queue.writeBuffer(this.instanceBuffer, 0, instanceData);
 
     const encoder = this.device.createCommandEncoder();
@@ -846,6 +870,7 @@ class WebGPURenderer {
       depthStencilAttachment: { view: this.depthTexture.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' },
     });
     pass.setPipeline(this.pipeline);
+    pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.vertexBuffer);
     pass.setVertexBuffer(1, this.normalBuffer);
     pass.setVertexBuffer(2, this.instanceBuffer);
@@ -859,6 +884,7 @@ class WebGPURenderer {
     this.normalBuffer.destroy();
     this.indexBuffer.destroy();
     this.instanceBuffer.destroy();
+    this.uniformBuffer.destroy();
     this.depthTexture?.destroy();
   }
 }
@@ -974,13 +1000,13 @@ function tick(timestamp) {
       state.system.update(subDt, state.elapsedTime + i * subDt);
     }
     const instanceData = state.system.getRenderData();
-    const updateEnd = performance.now();
+    const renderStart = performance.now();
     state.renderer.render(instanceData, width, height, state.elapsedTime);
     const renderEnd = performance.now();
 
     const frameCost = renderEnd - frameStart;
-    const updateCost = updateEnd - updateStart;
-    const renderCost = renderEnd - updateEnd;
+    const updateCost = renderStart - updateStart;
+    const renderCost = renderEnd - renderStart;
 
     state.fpsFrames += 1;
     state.fpsTime += dt;
