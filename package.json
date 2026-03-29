@@ -1,0 +1,22 @@
+{
+  "name": "render-test",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Mobile-friendly rendering benchmark demo comparing WebGL/WebGPU and JS/WebAssembly simulation paths.",
+  "scripts": {
+    "dev": "vite",
+    "prebuild": "node scripts/gen-wasm.mjs",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:GreenDou/render-test.git"
+  },
+  "homepage": "https://greendou.github.io/render-test/",
+  "devDependencies": {
+    "vite": "^7.1.9",
+    "wabt": "^1.0.37"
+  }
+}
