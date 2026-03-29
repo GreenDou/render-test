@@ -1,6 +1,6 @@
 import './style.css';
 
-const INSTANCE_OPTIONS = [100, 300, 600, 1200];
+const INSTANCE_OPTIONS = [100, 300, 600, 1200, 3000, 10000];
 const STRESS_LEVEL_OPTIONS = [1, 2, 4, 8];
 const SCALE_OPTIONS = [0.5, 0.8, 1, 1.2];
 const MESH_OPTIONS = [
@@ -713,15 +713,18 @@ class WebGLRenderer {
   resize(width, height) {
     this.gl.viewport(0, 0, width, height);
   }
-  render(instanceData, width, height, time) {
+  setInstanceData(instanceData, usage = this.gl.DYNAMIC_DRAW) {
+    const gl = this.gl;
+    this.instanceCount = instanceData.length / 5;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, instanceData, usage);
+  }
+  render(width, height, time) {
     const gl = this.gl;
     this.resize(width, height);
     perspective(this.proj, Math.PI / 4, width / height, 0.1, 100);
     lookAt(this.view, [0, 0, 16], [0, 0, 0], [0, 1, 0]);
     multiplyMat4(this.mvp, this.proj, this.view);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, instanceData, gl.DYNAMIC_DRAW);
 
     gl.clearColor(0.03, 0.05, 0.09, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -729,7 +732,7 @@ class WebGLRenderer {
     gl.uniformMatrix4fv(this.uViewProj, false, this.mvp);
     gl.uniform1f(this.uTime, time);
     gl.bindVertexArray(this.vao);
-    gl.drawElementsInstanced(gl.TRIANGLES, this.geometry.indices.length, gl.UNSIGNED_INT, 0, instanceData.length / 5);
+    gl.drawElementsInstanced(gl.TRIANGLES, this.geometry.indices.length, gl.UNSIGNED_INT, 0, this.instanceCount || 0);
     gl.bindVertexArray(null);
   }
   destroy() {
@@ -875,8 +878,12 @@ class WebGPURenderer {
     this.depthTexture = this.device.createTexture({ size: [width, height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
   }
   resize() {}
-  render(instanceData, width, height, time) {
+  setInstanceData(instanceData) {
     this.ensureInstanceBuffer(instanceData.byteLength);
+    this.instanceCount = instanceData.length / 5;
+    this.device.queue.writeBuffer(this.instanceBuffer, 0, instanceData);
+  }
+  render(width, height, time) {
     this.ensureDepth(width, height);
     perspective(this.proj, Math.PI / 4, width / height, 0.1, 100);
     lookAt(this.view, [0, 0, 16], [0, 0, 0], [0, 1, 0]);
@@ -885,7 +892,6 @@ class WebGPURenderer {
     this.uniformPayload.set(this.mvp, 0);
     this.uniformPayload[16] = time;
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformPayload);
-    this.device.queue.writeBuffer(this.instanceBuffer, 0, instanceData);
 
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -898,7 +904,7 @@ class WebGPURenderer {
     pass.setVertexBuffer(1, this.normalBuffer);
     pass.setVertexBuffer(2, this.instanceBuffer);
     pass.setIndexBuffer(this.indexBuffer, 'uint32');
-    pass.drawIndexed(this.geometry.indices.length, instanceData.length / 5);
+    pass.drawIndexed(this.geometry.indices.length, this.instanceCount || 0);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
   }
@@ -983,6 +989,12 @@ async function rebuildScene() {
       state.actualRenderer = 'N/A';
     }
     state.staticInstanceData = new Float32Array(state.system.getRenderData());
+    if (state.renderer) {
+      state.renderer.setInstanceData(
+        state.staticInstanceData,
+        state.benchmarkMode === 'render' && state.renderer.type === 'WebGL' ? state.renderer.gl.STATIC_DRAW : undefined,
+      );
+    }
     elements.modeChip.textContent = `模式：${state.benchmarkMode.toUpperCase()} · ${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
     elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
     elements.meshChip.textContent = `网格：${state.meshLevel} · ${state.instanceCount} 实例 · 压力 ${state.stressLevel}x`;
@@ -999,6 +1011,7 @@ async function rebuildScene() {
         state.renderer = await createRenderer('webgl', canvas, state.geometry || createTorusKnotGeometry(state.meshLevel));
         state.system = await createInstanceSystem(state.computeMode, state.instanceCount, state.instanceScale);
         state.staticInstanceData = new Float32Array(state.system.getRenderData());
+        state.renderer.setInstanceData(state.staticInstanceData);
         state.actualRenderer = state.renderer.type;
         elements.modeChip.textContent = `模式：${state.benchmarkMode.toUpperCase()} · ${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
         elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
@@ -1057,7 +1070,10 @@ function tick(timestamp) {
     }
     const renderStart = performance.now();
     if (hasRenderer) {
-      state.renderer.render(instanceData, width, height, state.elapsedTime);
+      if (state.benchmarkMode !== 'render') {
+        state.renderer.setInstanceData(instanceData);
+      }
+      state.renderer.render(width, height, state.elapsedTime);
     }
     const renderEnd = performance.now();
 
