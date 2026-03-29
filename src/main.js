@@ -74,6 +74,7 @@ app.innerHTML = `
         <div class="chip" id="modeChip">模式：--</div>
         <div class="chip" id="rendererChip">实际渲染：--</div>
         <div class="chip" id="particleChip">粒子：--</div>
+        <div class="chip" id="supportChip">WebGPU 支持：检测中</div>
         <div class="chip" id="statusChip">状态：初始化中</div>
       </div>
     </section>
@@ -93,6 +94,7 @@ const elements = {
   modeChip: document.querySelector('#modeChip'),
   rendererChip: document.querySelector('#rendererChip'),
   particleChip: document.querySelector('#particleChip'),
+  supportChip: document.querySelector('#supportChip'),
   statusChip: document.querySelector('#statusChip'),
 };
 
@@ -125,6 +127,9 @@ elements.rendererSelect.value = 'webgl';
 elements.computeSelect.value = 'js';
 elements.particleSelect.value = '15000';
 elements.pointSizeSelect.value = '3';
+applySavedConfig();
+
+const STORAGE_KEY = 'render-test-config-v1';
 
 const state = {
   requestedRenderer: 'webgl',
@@ -145,6 +150,44 @@ const state = {
 function setStatus(message, warn = false) {
   elements.statusChip.textContent = `状态：${message}`;
   elements.statusChip.classList.toggle('warn', warn);
+}
+
+function applySavedConfig() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved.renderer && RENDERER_OPTIONS.some((item) => item.value === saved.renderer)) {
+      elements.rendererSelect.value = saved.renderer;
+    }
+    if (saved.compute && COMPUTE_OPTIONS.some((item) => item.value === saved.compute)) {
+      elements.computeSelect.value = saved.compute;
+    }
+    if (saved.particles && PARTICLE_OPTIONS.includes(saved.particles)) {
+      elements.particleSelect.value = String(saved.particles);
+    }
+    if (saved.pointSize && POINT_SIZE_OPTIONS.includes(saved.pointSize)) {
+      elements.pointSizeSelect.value = String(saved.pointSize);
+    }
+  } catch (error) {
+    console.warn('load saved config failed', error);
+  }
+}
+
+function persistConfig() {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        renderer: elements.rendererSelect.value,
+        compute: elements.computeSelect.value,
+        particles: Number(elements.particleSelect.value),
+        pointSize: Number(elements.pointSizeSelect.value),
+      }),
+    );
+  } catch (error) {
+    console.warn('save config failed', error);
+  }
 }
 
 function mulberry32(seed) {
@@ -563,6 +606,11 @@ class WebGPURenderer {
   }
 }
 
+elements.supportChip.textContent = `WebGPU 支持：${state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持'}`;
+if (!state.webGpuAvailable) {
+  elements.supportChip.classList.add('warn');
+}
+
 function getCanvasSize() {
   const rect = elements.canvas.getBoundingClientRect();
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -604,6 +652,7 @@ async function rebuildScene() {
   state.computeMode = elements.computeSelect.value;
   state.particleCount = Number(elements.particleSelect.value);
   state.pointSize = Number(elements.pointSizeSelect.value);
+  persistConfig();
 
   let rendererMode = state.requestedRenderer;
   let fallbackNotice = '';
@@ -620,6 +669,7 @@ async function rebuildScene() {
     elements.modeChip.textContent = `模式：${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
     elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
     elements.particleChip.textContent = `粒子：${state.particleCount.toLocaleString()} @ ${state.pointSize}px`;
+    elements.supportChip.textContent = `WebGPU 支持：${state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持'}`;
     setStatus(fallbackNotice || '运行中', Boolean(fallbackNotice));
     state.running = true;
     tick(0);
@@ -634,6 +684,8 @@ async function rebuildScene() {
         elements.modeChip.textContent = `模式：${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
         elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
         elements.particleChip.textContent = `粒子：${state.particleCount.toLocaleString()} @ ${state.pointSize}px`;
+        elements.supportChip.textContent = 'WebGPU 支持：API 可见，但当前环境初始化失败';
+        elements.supportChip.classList.add('warn');
         setStatus('WebGPU 初始化失败，已回退到 WebGL', true);
         state.running = true;
         tick(0);
