@@ -1,7 +1,8 @@
 import './style.css';
 
-const PARTICLE_OPTIONS = [1000, 5000, 15000, 30000];
-const POINT_SIZE_OPTIONS = [2, 3, 4, 5];
+const PARTICLE_OPTIONS = [10000, 30000, 60000, 120000];
+const POINT_SIZE_OPTIONS = [1, 2, 3, 4];
+const STRESS_LEVEL_OPTIONS = [1, 2, 4, 8];
 const RENDERER_OPTIONS = [
   { value: 'webgl', label: 'WebGL' },
   { value: 'webgpu', label: 'WebGPU' },
@@ -21,7 +22,7 @@ app.innerHTML = `
         <div>
           <h1>Render Test Demo</h1>
           <p class="subtitle">
-            对比 WebGL / WebGPU 渲染，以及 JavaScript / WebAssembly 粒子更新逻辑，
+            对比 WebGL / WebGPU 渲染，以及 JavaScript / WebAssembly 高压粒子仿真逻辑，
             可直接在手机浏览器中切换并观察 FPS。
           </p>
         </div>
@@ -40,6 +41,10 @@ app.innerHTML = `
         <div class="field">
           <label for="particleSelect">粒子数量</label>
           <select id="particleSelect"></select>
+        </div>
+        <div class="field">
+          <label for="stressSelect">压力等级</label>
+          <select id="stressSelect"></select>
         </div>
         <div class="field">
           <label for="pointSizeSelect">粒子尺寸</label>
@@ -105,6 +110,7 @@ const elements = {
   rendererSelect: document.querySelector('#rendererSelect'),
   computeSelect: document.querySelector('#computeSelect'),
   particleSelect: document.querySelector('#particleSelect'),
+  stressSelect: document.querySelector('#stressSelect'),
   pointSizeSelect: document.querySelector('#pointSizeSelect'),
   fpsValue: document.querySelector('#fpsValue'),
   frameValue: document.querySelector('#frameValue'),
@@ -127,8 +133,9 @@ const elements = {
 const state = {
   requestedRenderer: 'webgl',
   computeMode: 'js',
-  particleCount: 15000,
-  pointSize: 3,
+  particleCount: 60000,
+  stressLevel: 4,
+  pointSize: 2,
   actualRenderer: '--',
   renderer: null,
   system: null,
@@ -236,6 +243,9 @@ function applySavedConfig() {
     if (saved.particles && PARTICLE_OPTIONS.includes(saved.particles)) {
       elements.particleSelect.value = String(saved.particles);
     }
+    if (saved.stress && STRESS_LEVEL_OPTIONS.includes(saved.stress)) {
+      elements.stressSelect.value = String(saved.stress);
+    }
     if (saved.pointSize && POINT_SIZE_OPTIONS.includes(saved.pointSize)) {
       elements.pointSizeSelect.value = String(saved.pointSize);
     }
@@ -252,6 +262,7 @@ function persistConfig() {
         renderer: elements.rendererSelect.value,
         compute: elements.computeSelect.value,
         particles: Number(elements.particleSelect.value),
+        stress: Number(elements.stressSelect.value),
         pointSize: Number(elements.pointSizeSelect.value),
       }),
     );
@@ -278,6 +289,12 @@ for (const option of PARTICLE_OPTIONS) {
     `<option value="${option}">${option.toLocaleString()}</option>`,
   );
 }
+for (const option of STRESS_LEVEL_OPTIONS) {
+  elements.stressSelect.insertAdjacentHTML(
+    'beforeend',
+    `<option value="${option}">${option}x</option>`,
+  );
+}
 for (const option of POINT_SIZE_OPTIONS) {
   elements.pointSizeSelect.insertAdjacentHTML(
     'beforeend',
@@ -287,8 +304,9 @@ for (const option of POINT_SIZE_OPTIONS) {
 
 elements.rendererSelect.value = 'webgl';
 elements.computeSelect.value = 'js';
-elements.particleSelect.value = '15000';
-elements.pointSizeSelect.value = '3';
+elements.particleSelect.value = '60000';
+elements.stressSelect.value = '4';
+elements.pointSizeSelect.value = '2';
 applySavedConfig();
 
 function updateSupportChip(message, warn = false) {
@@ -315,34 +333,52 @@ function createParticleState(count, width, height) {
     const base = i * 4;
     array[base] = rand() * width;
     array[base + 1] = rand() * height;
-    array[base + 2] = (rand() * 2 - 1) * 42;
-    array[base + 3] = (rand() * 2 - 1) * 42;
+    array[base + 2] = (rand() * 2 - 1) * 96;
+    array[base + 3] = (rand() * 2 - 1) * 96;
   }
   return array;
 }
 
 function updateParticlesJS(buffer, count, dt, width, height) {
+  const cx = width * 0.5;
+  const cy = height * 0.5;
+  const swirl = 0.0018;
+  const damping = 0.999;
   for (let i = 0; i < count; i += 1) {
     const base = i * 4;
-    let x = buffer[base] + buffer[base + 2] * dt;
-    let y = buffer[base + 1] + buffer[base + 3] * dt;
+    let x = buffer[base];
+    let y = buffer[base + 1];
     let vx = buffer[base + 2];
     let vy = buffer[base + 3];
 
+    const dx = cx - x;
+    const dy = cy - y;
+    const dist2 = dx * dx + dy * dy + 0.0001;
+    const invDist = 1 / Math.sqrt(dist2);
+    const force = Math.min(240, 12000 / dist2);
+
+    vx += (dx * invDist * force - dy * swirl) * dt;
+    vy += (dy * invDist * force + dx * swirl) * dt;
+
+    vx *= damping;
+    vy *= damping;
+    x += vx * dt;
+    y += vy * dt;
+
     if (x < 0) {
       x = 0;
-      vx = -vx;
+      vx = Math.abs(vx) * 0.96;
     } else if (x > width) {
       x = width;
-      vx = -vx;
+      vx = -Math.abs(vx) * 0.96;
     }
 
     if (y < 0) {
       y = 0;
-      vy = -vy;
+      vy = Math.abs(vy) * 0.96;
     } else if (y > height) {
       y = height;
-      vy = -vy;
+      vy = -Math.abs(vy) * 0.96;
     }
 
     buffer[base] = x;
@@ -757,6 +793,7 @@ async function rebuildScene() {
   state.requestedRenderer = elements.rendererSelect.value;
   state.computeMode = elements.computeSelect.value;
   state.particleCount = Number(elements.particleSelect.value);
+  state.stressLevel = Number(elements.stressSelect.value);
   state.pointSize = Number(elements.pointSizeSelect.value);
   persistConfig();
 
@@ -774,7 +811,7 @@ async function rebuildScene() {
     state.actualRenderer = state.renderer.type;
     elements.modeChip.textContent = `模式：${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
     elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
-    elements.particleChip.textContent = `粒子：${state.particleCount.toLocaleString()} @ ${state.pointSize}px`;
+    elements.particleChip.textContent = `粒子：${state.particleCount.toLocaleString()} · 压力 ${state.stressLevel}x · ${state.pointSize}px`;
     updateSupportChip(state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持', !state.webGpuAvailable);
     setStatus(fallbackNotice || '运行中', Boolean(fallbackNotice));
     state.running = true;
@@ -790,7 +827,7 @@ async function rebuildScene() {
         state.actualRenderer = state.renderer.type;
         elements.modeChip.textContent = `模式：${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
         elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
-        elements.particleChip.textContent = `粒子：${state.particleCount.toLocaleString()} @ ${state.pointSize}px`;
+        elements.particleChip.textContent = `粒子：${state.particleCount.toLocaleString()} · 压力 ${state.stressLevel}x · ${state.pointSize}px`;
         updateSupportChip('API 可见，但当前环境初始化失败', true);
         setStatus('WebGPU 初始化失败，已回退到 WebGL', true, detail);
         state.running = true;
@@ -823,7 +860,10 @@ function tick(timestamp) {
 
     const frameStart = performance.now();
     const updateStart = performance.now();
-    state.system.update(dt, width, height);
+    const subDt = dt / state.stressLevel;
+    for (let i = 0; i < state.stressLevel; i += 1) {
+      state.system.update(subDt, width, height);
+    }
     const positions = state.system.getPositions();
     const updateEnd = performance.now();
     state.renderer.render(positions, width, height, state.pointSize);
@@ -858,6 +898,7 @@ for (const control of [
   elements.rendererSelect,
   elements.computeSelect,
   elements.particleSelect,
+  elements.stressSelect,
   elements.pointSizeSelect,
 ]) {
   control.addEventListener('change', () => {

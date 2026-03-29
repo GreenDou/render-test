@@ -14,7 +14,7 @@
 
 - 通过下拉菜单切换渲染后端：`WebGL / WebGPU`
 - 通过下拉菜单切换计算实现：`JavaScript / WebAssembly`
-- 通过下拉菜单切换粒子数量与粒子尺寸
+- 通过下拉菜单切换粒子数量、压力等级与粒子尺寸
 - 实时显示 `FPS / Frame / Update / Render` 指标
 - 针对手机端布局做了适配，适合直接在移动浏览器打开测试
 - 自动记住上次选择的配置
@@ -26,7 +26,7 @@
 
 - 使用 `Vite` 作为构建工具
 - 使用 `WebGL2` 和 `WebGPU` 两条渲染路径
-- 使用 `JavaScript` 与 `WebAssembly` 两条粒子更新路径
+- 使用 `JavaScript` 与 `WebAssembly` 两条高压粒子仿真路径
 - WebAssembly 模块由 `scripts/gen-wasm.mjs` 在构建前自动生成
 - Pages 路由基址已配置为 `/render-test/`
 
@@ -65,7 +65,7 @@ npm run build
 3. `WebGPU + JavaScript`
 4. `WebGPU + WebAssembly`
 
-再结合不同粒子数量（例如 `5,000 / 15,000 / 30,000`）进行对比。
+再结合不同粒子数量（例如 `10,000 / 30,000 / 60,000 / 120,000`）和压力等级（`1x / 2x / 4x / 8x`）进行对比。
 
 ## 注意事项
 
