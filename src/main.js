@@ -88,6 +88,14 @@ app.innerHTML = `
           <div class="stat-label">Render</div>
           <div class="stat-value" id="renderValue">--</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-label">DrawCalls</div>
+          <div class="stat-value" id="drawCallsValue">--</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Upload</div>
+          <div class="stat-value" id="uploadValue">--</div>
+        </div>
       </div>
 
       <div class="action-row">
@@ -137,6 +145,8 @@ const elements = {
   frameValue: document.querySelector('#frameValue'),
   updateValue: document.querySelector('#updateValue'),
   renderValue: document.querySelector('#renderValue'),
+  drawCallsValue: document.querySelector('#drawCallsValue'),
+  uploadValue: document.querySelector('#uploadValue'),
   modeChip: document.querySelector('#modeChip'),
   rendererChip: document.querySelector('#rendererChip'),
   meshChip: document.querySelector('#meshChip'),
@@ -175,6 +185,8 @@ const state = {
   metricWindowFrameCost: 0,
   metricWindowUpdateCost: 0,
   metricWindowRenderCost: 0,
+  metricWindowDrawCalls: 0,
+  metricWindowUploadBytes: 0,
   staticInstanceData: null,
   running: false,
   webGpuAvailable: 'gpu' in navigator,
@@ -957,6 +969,8 @@ async function rebuildScene() {
   state.metricWindowFrameCost = 0;
   state.metricWindowUpdateCost = 0;
   state.metricWindowRenderCost = 0;
+  state.metricWindowDrawCalls = 0;
+  state.metricWindowUploadBytes = 0;
   state.elapsedTime = 0;
   setLastError('');
 
@@ -1039,6 +1053,13 @@ function formatDurationMs(value) {
   return `${value.toFixed(2)}ms`;
 }
 
+function formatUploadBytes(bytes) {
+  if (bytes <= 0) return '0B';
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)}MB`;
+}
+
 function formatFpsWithJitter(fps, samples) {
   if (!samples.length) return fps.toFixed(1);
   const avg = samples.reduce((sum, x) => sum + x, 0) / samples.length;
@@ -1080,6 +1101,8 @@ function tick(timestamp) {
     const frameCost = renderEnd - frameStart;
     const updateCost = renderStart - updateStart;
     const renderCost = renderEnd - renderStart;
+    const drawCalls = hasRenderer ? 1 : 0;
+    const uploadBytes = hasRenderer && state.benchmarkMode !== 'render' ? instanceData.byteLength : 0;
 
     state.fpsFrames += 1;
     state.fpsTime += dt;
@@ -1090,6 +1113,8 @@ function tick(timestamp) {
     state.metricWindowFrameCost += frameCost;
     state.metricWindowUpdateCost += updateCost;
     state.metricWindowRenderCost += renderCost;
+    state.metricWindowDrawCalls += drawCalls;
+    state.metricWindowUploadBytes += uploadBytes;
     if (state.fpsTime >= 0.5) {
       elements.fpsValue.textContent = formatFpsWithJitter(state.fpsFrames / state.fpsTime, state.frameIntervalSamples);
       state.fpsFrames = 0;
@@ -1100,11 +1125,15 @@ function tick(timestamp) {
       elements.frameValue.textContent = formatDurationMs(state.metricWindowFrameCost / denom);
       elements.updateValue.textContent = formatDurationMs(state.metricWindowUpdateCost / denom);
       elements.renderValue.textContent = formatDurationMs(state.metricWindowRenderCost / denom);
+      elements.drawCallsValue.textContent = (state.metricWindowDrawCalls / denom).toFixed(1);
+      elements.uploadValue.textContent = formatUploadBytes(Math.round(state.metricWindowUploadBytes / denom));
       state.metricWindowTime = 0;
       state.metricWindowFrames = 0;
       state.metricWindowFrameCost = 0;
       state.metricWindowUpdateCost = 0;
       state.metricWindowRenderCost = 0;
+      state.metricWindowDrawCalls = 0;
+      state.metricWindowUploadBytes = 0;
     }
 
     state.animationFrame = requestAnimationFrame(tick);
