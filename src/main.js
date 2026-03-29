@@ -549,17 +549,32 @@ function lookAt(out, eye, center, up) {
   return out;
 }
 function multiplyMat4(out, a, b) {
-  const o = new Float32Array(16);
-  for (let row = 0; row < 4; row += 1) {
-    for (let col = 0; col < 4; col += 1) {
-      o[row * 4 + col] =
-        a[row * 4 + 0] * b[col + 0] +
-        a[row * 4 + 1] * b[col + 4] +
-        a[row * 4 + 2] * b[col + 8] +
-        a[row * 4 + 3] * b[col + 12];
-    }
-  }
-  out.set(o);
+  const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+  const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+  const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+  const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+  const b00 = b[0], b01 = b[1], b02 = b[2], b03 = b[3];
+  const b10 = b[4], b11 = b[5], b12 = b[6], b13 = b[7];
+  const b20 = b[8], b21 = b[9], b22 = b[10], b23 = b[11];
+  const b30 = b[12], b31 = b[13], b32 = b[14], b33 = b[15];
+
+  out[0] = a00 * b00 + a10 * b01 + a20 * b02 + a30 * b03;
+  out[1] = a01 * b00 + a11 * b01 + a21 * b02 + a31 * b03;
+  out[2] = a02 * b00 + a12 * b01 + a22 * b02 + a32 * b03;
+  out[3] = a03 * b00 + a13 * b01 + a23 * b02 + a33 * b03;
+  out[4] = a00 * b10 + a10 * b11 + a20 * b12 + a30 * b13;
+  out[5] = a01 * b10 + a11 * b11 + a21 * b12 + a31 * b13;
+  out[6] = a02 * b10 + a12 * b11 + a22 * b12 + a32 * b13;
+  out[7] = a03 * b10 + a13 * b11 + a23 * b12 + a33 * b13;
+  out[8] = a00 * b20 + a10 * b21 + a20 * b22 + a30 * b23;
+  out[9] = a01 * b20 + a11 * b21 + a21 * b22 + a31 * b23;
+  out[10] = a02 * b20 + a12 * b21 + a22 * b22 + a32 * b23;
+  out[11] = a03 * b20 + a13 * b21 + a23 * b22 + a33 * b23;
+  out[12] = a00 * b30 + a10 * b31 + a20 * b32 + a30 * b33;
+  out[13] = a01 * b30 + a11 * b31 + a21 * b32 + a31 * b33;
+  out[14] = a02 * b30 + a12 * b31 + a22 * b32 + a32 * b33;
+  out[15] = a03 * b30 + a13 * b31 + a23 * b32 + a33 * b33;
   return out;
 }
 
@@ -654,7 +669,7 @@ class WebGLRenderer {
     gl.bindVertexArray(null);
 
     gl.enable(gl.DEPTH_TEST);
-    gl.enable(gl.CULL_FACE);
+    gl.disable(gl.CULL_FACE);
   }
   createShader(type, source) {
     const gl = this.gl;
@@ -736,12 +751,8 @@ class WebGPURenderer {
     device.queue.writeBuffer(this.indexBuffer, 0, geometry.indices);
     this.instanceCapacity = 5 * 4;
     this.instanceBuffer = device.createBuffer({ size: this.instanceCapacity, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-    this.uniformBuffer = device.createBuffer({ size: 20 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-
     const shader = device.createShaderModule({
       code: `
-        struct Uniforms { viewProj : mat4x4<f32>, time : f32, pad0 : vec3<f32> };
-        @group(0) @binding(0) var<uniform> uniforms : Uniforms;
         struct VSIn {
           @location(0) position : vec3<f32>,
           @location(1) normal : vec3<f32>,
@@ -763,13 +774,16 @@ class WebGPURenderer {
           return mat3x3<f32>(vec3<f32>(1.0,0.0,0.0), vec3<f32>(0.0,c,-s), vec3<f32>(0.0,s,c));
         }
         @vertex fn vsMain(input : VSIn) -> VSOut {
-          let angle = uniforms.time * 0.8 + input.phase;
+          let angle = input.phase;
           let rot = rotY(angle) * rotX(angle * 0.7);
-          let pos = rot * (input.position * input.scale) + input.offset;
+          let world = rot * (input.position * input.scale) + input.offset;
+          let cameraZ = 18.0;
+          let viewZ = cameraZ - world.z;
+          let invZ = 1.0 / max(viewZ, 0.1);
           var out : VSOut;
-          out.position = uniforms.viewProj * vec4<f32>(pos, 1.0);
+          out.position = vec4<f32>(world.x * invZ * 1.2, world.y * invZ * 1.2, clamp(1.0 - viewZ / 32.0, 0.0, 1.0), 1.0);
           out.normal = normalize(rot * input.normal);
-          out.color = 0.5 + 0.5 * cos(vec3<f32>(0.0, 2.1, 4.2) + input.phase + uniforms.time * 0.2);
+          out.color = 0.5 + 0.5 * cos(vec3<f32>(0.0, 2.1, 4.2) + input.phase);
           return out;
         }
         @fragment fn fsMain(input : VSOut) -> @location(0) vec4<f32> {
@@ -801,11 +815,10 @@ class WebGPURenderer {
         ],
       },
       fragment: { module: shader, entryPoint: 'fsMain', targets: [{ format: this.format }] },
-      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
     });
 
-    this.bindGroup = device.createBindGroup({ layout: this.pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }] });
     this.depthTexture = null;
   }
   ensureInstanceBuffer(byteLength) {
@@ -825,13 +838,6 @@ class WebGPURenderer {
   render(instanceData, width, height, time) {
     this.ensureInstanceBuffer(instanceData.byteLength);
     this.ensureDepth(width, height);
-    perspective(this.proj, Math.PI / 4, width / height, 0.1, 100);
-    lookAt(this.view, [0, 0, 16], [0, 0, 0], [0, 1, 0]);
-    multiplyMat4(this.mvp, this.proj, this.view);
-    const uniformPayload = new Float32Array(20);
-    uniformPayload.set(this.mvp, 0);
-    uniformPayload[16] = time;
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformPayload);
     this.device.queue.writeBuffer(this.instanceBuffer, 0, instanceData);
 
     const encoder = this.device.createCommandEncoder();
@@ -840,7 +846,6 @@ class WebGPURenderer {
       depthStencilAttachment: { view: this.depthTexture.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' },
     });
     pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.vertexBuffer);
     pass.setVertexBuffer(1, this.normalBuffer);
     pass.setVertexBuffer(2, this.instanceBuffer);
@@ -854,7 +859,6 @@ class WebGPURenderer {
     this.normalBuffer.destroy();
     this.indexBuffer.destroy();
     this.instanceBuffer.destroy();
-    this.uniformBuffer.destroy();
     this.depthTexture?.destroy();
   }
 }
