@@ -24,6 +24,7 @@ const BENCHMARK_MODE_OPTIONS = [
 const STORAGE_KEY = 'render-test-mesh-config-v1';
 const LOG_LIMIT = 100;
 const INSTANCE_STRIDE = 8; // x y z vx vy vz phase scale
+const WEBGPU_MAX_DPR = 1.5;
 
 const app = document.querySelector('#app');
 app.innerHTML = `
@@ -188,6 +189,7 @@ const state = {
   metricWindowDrawCalls: 0,
   metricWindowUploadBytes: 0,
   staticInstanceData: null,
+  staticInstanceExtras: null,
   running: false,
   webGpuAvailable: 'gpu' in navigator,
   logs: [],
@@ -421,11 +423,24 @@ function createTorusKnotGeometry(level) {
     }
   }
 
+  const positionsArray = new Float32Array(positions);
+  const normalsArray = new Float32Array(normals);
+  const interleaved = new Float32Array((positionsArray.length / 3) * 6);
+  for (let i = 0, vertex = 0; i < positionsArray.length; i += 3, vertex += 6) {
+    interleaved[vertex] = positionsArray[i];
+    interleaved[vertex + 1] = positionsArray[i + 1];
+    interleaved[vertex + 2] = positionsArray[i + 2];
+    interleaved[vertex + 3] = normalsArray[i];
+    interleaved[vertex + 4] = normalsArray[i + 1];
+    interleaved[vertex + 5] = normalsArray[i + 2];
+  }
+
   return {
-    positions: new Float32Array(positions),
-    normals: new Float32Array(normals),
+    positions: positionsArray,
+    normals: normalsArray,
+    interleaved,
     indices: new Uint32Array(indices),
-    vertexCount: positions.length / 3,
+    vertexCount: positionsArray.length / 3,
     triangleCount: indices.length / 3,
   };
 }
@@ -758,6 +773,27 @@ class WebGLRenderer {
   }
 }
 
+function createStaticInstanceExtras(instanceData) {
+  const count = Math.floor(instanceData.length / 5);
+  const extras = new Float32Array(count * 6);
+  for (let i = 0; i < count; i += 1) {
+    const src = i * 5;
+    const dst = i * 6;
+    const phase = instanceData[src + 3];
+    const axisX = Math.sin(phase * 1.37 + 0.2);
+    const axisY = Math.cos(phase * 0.73 + 1.1) * 0.85;
+    const axisZ = Math.sin(phase * 1.91 + 2.4);
+    const axisLen = Math.hypot(axisX, axisY, axisZ) || 1;
+    extras[dst] = axisX / axisLen;
+    extras[dst + 1] = axisY / axisLen;
+    extras[dst + 2] = axisZ / axisLen;
+    extras[dst + 3] = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(phase + 0.0));
+    extras[dst + 4] = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(phase + 2.1));
+    extras[dst + 5] = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(phase + 4.2));
+  }
+  return extras;
+}
+
 class WebGPURenderer {
   static async create(canvas, geometry) {
     if (!('gpu' in navigator)) throw new Error('当前浏览器不支持 WebGPU');
@@ -781,14 +817,14 @@ class WebGPURenderer {
     this.view = new Float32Array(16);
     this.uniformPayload = new Float32Array(24);
 
-    this.vertexBuffer = device.createBuffer({ size: geometry.positions.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(this.vertexBuffer, 0, geometry.positions);
-    this.normalBuffer = device.createBuffer({ size: geometry.normals.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(this.normalBuffer, 0, geometry.normals);
+    this.vertexBuffer = device.createBuffer({ size: geometry.interleaved.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(this.vertexBuffer, 0, geometry.interleaved);
     this.indexBuffer = device.createBuffer({ size: geometry.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(this.indexBuffer, 0, geometry.indices);
     this.instanceCapacity = 5 * 4;
     this.instanceBuffer = device.createBuffer({ size: this.instanceCapacity, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    this.instanceExtrasCapacity = 6 * 4;
+    this.instanceExtrasBuffer = device.createBuffer({ size: this.instanceExtrasCapacity, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     this.uniformBuffer = device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     const shader = device.createShaderModule({
       code: `
@@ -804,28 +840,28 @@ class WebGPURenderer {
           @location(2) offset : vec3<f32>,
           @location(3) phase : f32,
           @location(4) scale : f32,
+          @location(5) axis : vec3<f32>,
+          @location(6) color : vec3<f32>,
         };
         struct VSOut {
           @builtin(position) position : vec4<f32>,
           @location(0) normal : vec3<f32>,
           @location(1) color : vec3<f32>,
         };
-        fn rotY(a: f32) -> mat3x3<f32> {
-          let c = cos(a); let s = sin(a);
-          return mat3x3<f32>(vec3<f32>(c,0.0,s), vec3<f32>(0.0,1.0,0.0), vec3<f32>(-s,0.0,c));
-        }
-        fn rotX(a: f32) -> mat3x3<f32> {
-          let c = cos(a); let s = sin(a);
-          return mat3x3<f32>(vec3<f32>(1.0,0.0,0.0), vec3<f32>(0.0,c,-s), vec3<f32>(0.0,s,c));
+        fn rotateAxis(v: vec3<f32>, axis: vec3<f32>, angle: f32) -> vec3<f32> {
+          let s = sin(angle);
+          let c = cos(angle);
+          return v * c + cross(axis, v) * s + axis * dot(axis, v) * (1.0 - c);
         }
         @vertex fn vsMain(input : VSIn) -> VSOut {
           let angle = uniforms.time * 0.8 + input.phase;
-          let rot = rotY(angle) * rotX(angle * 0.7);
-          let pos = rot * (input.position * input.scale) + input.offset;
+          let axis = normalize(input.axis);
+          let scaled = input.position * input.scale;
+          let pos = rotateAxis(scaled, axis, angle) + input.offset;
           var out : VSOut;
           out.position = uniforms.viewProj * vec4<f32>(pos, 1.0);
-          out.normal = normalize(rot * input.normal);
-          out.color = 0.5 + 0.5 * cos(vec3<f32>(0.0, 2.1, 4.2) + input.phase + uniforms.time * 0.2);
+          out.normal = normalize(rotateAxis(input.normal, axis, angle));
+          out.color = input.color;
           return out;
         }
         @fragment fn fsMain(input : VSOut) -> @location(0) vec4<f32> {
@@ -852,8 +888,14 @@ class WebGPURenderer {
         module: shader,
         entryPoint: 'vsMain',
         buffers: [
-          { arrayStride: 12, stepMode: 'vertex', attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
-          { arrayStride: 12, stepMode: 'vertex', attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' }] },
+          {
+            arrayStride: 24,
+            stepMode: 'vertex',
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+            ],
+          },
           {
             arrayStride: 20,
             stepMode: 'instance',
@@ -863,10 +905,18 @@ class WebGPURenderer {
               { shaderLocation: 4, offset: 16, format: 'float32' },
             ],
           },
+          {
+            arrayStride: 24,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 5, offset: 0, format: 'float32x3' },
+              { shaderLocation: 6, offset: 12, format: 'float32x3' },
+            ],
+          },
         ],
       },
       fragment: { module: shader, entryPoint: 'fsMain', targets: [{ format: this.format }] },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
     });
 
@@ -882,6 +932,12 @@ class WebGPURenderer {
     this.instanceCapacity = byteLength;
     this.instanceBuffer = this.device.createBuffer({ size: byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
   }
+  ensureInstanceExtrasBuffer(byteLength) {
+    if (this.instanceExtrasCapacity >= byteLength) return;
+    this.instanceExtrasBuffer.destroy();
+    this.instanceExtrasCapacity = byteLength;
+    this.instanceExtrasBuffer = this.device.createBuffer({ size: byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  }
   ensureDepth(width, height) {
     if (this.depthTexture && this.depthWidth === width && this.depthHeight === height) return;
     this.depthTexture?.destroy();
@@ -894,6 +950,10 @@ class WebGPURenderer {
     this.ensureInstanceBuffer(instanceData.byteLength);
     this.instanceCount = instanceData.length / 5;
     this.device.queue.writeBuffer(this.instanceBuffer, 0, instanceData);
+  }
+  setStaticInstanceExtras(extrasData) {
+    this.ensureInstanceExtrasBuffer(extrasData.byteLength);
+    this.device.queue.writeBuffer(this.instanceExtrasBuffer, 0, extrasData);
   }
   render(width, height, time) {
     this.ensureDepth(width, height);
@@ -908,13 +968,13 @@ class WebGPURenderer {
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [{ view: this.context.getCurrentTexture().createView(), clearValue: { r: 0.03, g: 0.05, b: 0.09, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
-      depthStencilAttachment: { view: this.depthTexture.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' },
+      depthStencilAttachment: { view: this.depthTexture.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'discard' },
     });
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.vertexBuffer);
-    pass.setVertexBuffer(1, this.normalBuffer);
-    pass.setVertexBuffer(2, this.instanceBuffer);
+    pass.setVertexBuffer(1, this.instanceBuffer);
+    pass.setVertexBuffer(2, this.instanceExtrasBuffer);
     pass.setIndexBuffer(this.indexBuffer, 'uint32');
     pass.drawIndexed(this.geometry.indices.length, this.instanceCount || 0);
     pass.end();
@@ -922,9 +982,9 @@ class WebGPURenderer {
   }
   destroy() {
     this.vertexBuffer.destroy();
-    this.normalBuffer.destroy();
     this.indexBuffer.destroy();
     this.instanceBuffer.destroy();
+    this.instanceExtrasBuffer.destroy();
     this.uniformBuffer.destroy();
     this.depthTexture?.destroy();
   }
@@ -932,7 +992,8 @@ class WebGPURenderer {
 
 function getCanvasSize() {
   const rect = state.canvas.getBoundingClientRect();
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dprCap = state.renderer?.type === 'WebGPU' ? WEBGPU_MAX_DPR : 2;
+  const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
   const width = Math.max(1, Math.floor(rect.width * dpr));
   const height = Math.max(1, Math.floor(rect.height * dpr));
   if (state.canvas.width !== width || state.canvas.height !== height) {
@@ -960,6 +1021,7 @@ async function rebuildScene() {
   state.renderer = null;
   state.system = null;
   state.staticInstanceData = null;
+  state.staticInstanceExtras = null;
   state.lastTimestamp = 0;
   state.fpsFrames = 0;
   state.fpsTime = 0;
@@ -1003,14 +1065,16 @@ async function rebuildScene() {
       state.actualRenderer = 'N/A';
     }
     state.staticInstanceData = new Float32Array(state.system.getRenderData());
+    state.staticInstanceExtras = createStaticInstanceExtras(state.staticInstanceData);
     if (state.renderer) {
       state.renderer.setInstanceData(
         state.staticInstanceData,
         state.benchmarkMode === 'render' && state.renderer.type === 'WebGL' ? state.renderer.gl.STATIC_DRAW : undefined,
       );
+      state.renderer.setStaticInstanceExtras?.(state.staticInstanceExtras);
     }
     elements.modeChip.textContent = `模式：${state.benchmarkMode.toUpperCase()} · ${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
-    elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
+    elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}${state.actualRenderer === 'WebGPU' ? ` · DPR≤${WEBGPU_MAX_DPR}` : ''}`;
     elements.meshChip.textContent = `网格：${state.meshLevel} · ${state.instanceCount} 实例 · 压力 ${state.stressLevel}x`;
     updateSupportChip(state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持', !state.webGpuAvailable);
     setStatus(fallbackNotice || '运行中', Boolean(fallbackNotice));
@@ -1025,10 +1089,12 @@ async function rebuildScene() {
         state.renderer = await createRenderer('webgl', canvas, state.geometry || createTorusKnotGeometry(state.meshLevel));
         state.system = await createInstanceSystem(state.computeMode, state.instanceCount, state.instanceScale);
         state.staticInstanceData = new Float32Array(state.system.getRenderData());
+        state.staticInstanceExtras = createStaticInstanceExtras(state.staticInstanceData);
         state.renderer.setInstanceData(state.staticInstanceData);
+        state.renderer.setStaticInstanceExtras?.(state.staticInstanceExtras);
         state.actualRenderer = state.renderer.type;
         elements.modeChip.textContent = `模式：${state.benchmarkMode.toUpperCase()} · ${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
-        elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
+        elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}${state.actualRenderer === 'WebGPU' ? ` · DPR≤${WEBGPU_MAX_DPR}` : ''}`;
         elements.meshChip.textContent = `网格：${state.meshLevel} · ${state.instanceCount} 实例 · 压力 ${state.stressLevel}x`;
         updateSupportChip('API 可见，但当前环境初始化失败', true);
         setStatus('WebGPU 初始化失败，已回退到 WebGL', true, detail);
