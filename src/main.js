@@ -10,6 +10,8 @@ const COMPUTE_OPTIONS = [
   { value: 'js', label: 'JavaScript' },
   { value: 'wasm', label: 'WebAssembly' },
 ];
+const STORAGE_KEY = 'render-test-config-v2';
+const LOG_LIMIT = 80;
 
 const app = document.querySelector('#app');
 app.innerHTML = `
@@ -63,6 +65,23 @@ app.innerHTML = `
           <div class="stat-value" id="renderValue">--</div>
         </div>
       </div>
+
+      <div class="action-row">
+        <button class="ghost-btn" id="toggleLogsBtn" type="button">显示日志</button>
+        <button class="ghost-btn" id="copyErrorBtn" type="button">复制错误</button>
+        <button class="ghost-btn" id="clearLogsBtn" type="button">清空日志</button>
+      </div>
+
+      <div class="error-box hidden" id="errorBox">
+        <div class="error-title">最近错误</div>
+        <pre id="errorText">暂无</pre>
+      </div>
+
+      <details class="log-panel" id="logPanel">
+        <summary>调试日志（可展开查看页面内 console）</summary>
+        <pre id="logOutput">暂无日志</pre>
+      </details>
+
       <div class="footer-note">
         建议在同一台设备上依次切换不同组合进行对比；如果浏览器暂不支持 WebGPU，会自动回退到 WebGL。
       </div>
@@ -96,40 +115,14 @@ const elements = {
   particleChip: document.querySelector('#particleChip'),
   supportChip: document.querySelector('#supportChip'),
   statusChip: document.querySelector('#statusChip'),
+  logPanel: document.querySelector('#logPanel'),
+  logOutput: document.querySelector('#logOutput'),
+  errorBox: document.querySelector('#errorBox'),
+  errorText: document.querySelector('#errorText'),
+  toggleLogsBtn: document.querySelector('#toggleLogsBtn'),
+  copyErrorBtn: document.querySelector('#copyErrorBtn'),
+  clearLogsBtn: document.querySelector('#clearLogsBtn'),
 };
-
-for (const option of RENDERER_OPTIONS) {
-  elements.rendererSelect.insertAdjacentHTML(
-    'beforeend',
-    `<option value="${option.value}">${option.label}</option>`,
-  );
-}
-for (const option of COMPUTE_OPTIONS) {
-  elements.computeSelect.insertAdjacentHTML(
-    'beforeend',
-    `<option value="${option.value}">${option.label}</option>`,
-  );
-}
-for (const option of PARTICLE_OPTIONS) {
-  elements.particleSelect.insertAdjacentHTML(
-    'beforeend',
-    `<option value="${option}">${option.toLocaleString()}</option>`,
-  );
-}
-for (const option of POINT_SIZE_OPTIONS) {
-  elements.pointSizeSelect.insertAdjacentHTML(
-    'beforeend',
-    `<option value="${option}">${option}px</option>`,
-  );
-}
-
-elements.rendererSelect.value = 'webgl';
-elements.computeSelect.value = 'js';
-elements.particleSelect.value = '15000';
-elements.pointSizeSelect.value = '3';
-applySavedConfig();
-
-const STORAGE_KEY = 'render-test-config-v1';
 
 const state = {
   requestedRenderer: 'webgl',
@@ -145,11 +138,88 @@ const state = {
   fpsTime: 0,
   running: false,
   webGpuAvailable: 'gpu' in navigator,
+  logs: [],
+  lastErrorText: '',
 };
 
-function setStatus(message, warn = false) {
+function safeStringify(value) {
+  try {
+    if (value instanceof Error) {
+      return `${value.name}: ${value.message}${value.stack ? `\n${value.stack}` : ''}`;
+    }
+    if (typeof value === 'string') return value;
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatError(error, context = '') {
+  if (!error) return context || '未知错误';
+  const prefix = context ? `[${context}] ` : '';
+  if (error instanceof Error) {
+    return `${prefix}${error.name}: ${error.message}${error.stack ? `\n${error.stack}` : ''}`;
+  }
+  return `${prefix}${safeStringify(error)}`;
+}
+
+function pushLog(level, ...args) {
+  const line = `[${new Date().toLocaleTimeString('zh-CN', { hour12: false })}] ${level.toUpperCase()} ${args
+    .map((item) => safeStringify(item))
+    .join(' ')}`;
+  state.logs.push(line);
+  if (state.logs.length > LOG_LIMIT) state.logs.shift();
+  elements.logOutput.textContent = state.logs.join('\n');
+}
+
+const nativeConsole = {
+  log: console.log.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+  info: console.info.bind(console),
+};
+
+console.log = (...args) => {
+  pushLog('log', ...args);
+  nativeConsole.log(...args);
+};
+console.info = (...args) => {
+  pushLog('info', ...args);
+  nativeConsole.info(...args);
+};
+console.warn = (...args) => {
+  pushLog('warn', ...args);
+  nativeConsole.warn(...args);
+};
+console.error = (...args) => {
+  pushLog('error', ...args);
+  nativeConsole.error(...args);
+};
+
+window.addEventListener('error', (event) => {
+  const text = formatError(event.error || event.message, 'window.error');
+  setLastError(text);
+  console.error(text);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const text = formatError(event.reason, 'unhandledrejection');
+  setLastError(text);
+  console.error(text);
+});
+
+function setLastError(text) {
+  state.lastErrorText = text || '';
+  elements.errorText.textContent = state.lastErrorText || '暂无';
+  elements.errorBox.classList.toggle('hidden', !state.lastErrorText);
+}
+
+function setStatus(message, warn = false, detail = '') {
   elements.statusChip.textContent = `状态：${message}`;
   elements.statusChip.classList.toggle('warn', warn);
+  if (detail) {
+    setLastError(detail);
+  }
 }
 
 function applySavedConfig() {
@@ -189,6 +259,44 @@ function persistConfig() {
     console.warn('save config failed', error);
   }
 }
+
+for (const option of RENDERER_OPTIONS) {
+  elements.rendererSelect.insertAdjacentHTML(
+    'beforeend',
+    `<option value="${option.value}">${option.label}</option>`,
+  );
+}
+for (const option of COMPUTE_OPTIONS) {
+  elements.computeSelect.insertAdjacentHTML(
+    'beforeend',
+    `<option value="${option.value}">${option.label}</option>`,
+  );
+}
+for (const option of PARTICLE_OPTIONS) {
+  elements.particleSelect.insertAdjacentHTML(
+    'beforeend',
+    `<option value="${option}">${option.toLocaleString()}</option>`,
+  );
+}
+for (const option of POINT_SIZE_OPTIONS) {
+  elements.pointSizeSelect.insertAdjacentHTML(
+    'beforeend',
+    `<option value="${option}">${option}px</option>`,
+  );
+}
+
+elements.rendererSelect.value = 'webgl';
+elements.computeSelect.value = 'js';
+elements.particleSelect.value = '15000';
+elements.pointSizeSelect.value = '3';
+applySavedConfig();
+
+function updateSupportChip(message, warn = false) {
+  elements.supportChip.textContent = `WebGPU 支持：${message}`;
+  elements.supportChip.classList.toggle('warn', warn);
+}
+
+updateSupportChip(state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持', !state.webGpuAvailable);
 
 function mulberry32(seed) {
   let t = seed >>> 0;
@@ -269,6 +377,7 @@ class JSParticleSystem {
 class WasmParticleSystem {
   static async create(count, width, height) {
     const url = new URL('./wasm/particle-update.wasm', import.meta.url);
+    console.info('loading wasm', url.href);
     const response = await fetch(url);
     const bytes = await response.arrayBuffer();
     const { instance } = await WebAssembly.instantiate(bytes, {});
@@ -345,14 +454,7 @@ class WebGLRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
     gl.bufferData(
       gl.ARRAY_BUFFER,
-      new Float32Array([
-        -0.5, -0.5,
-        0.5, -0.5,
-        -0.5, 0.5,
-        -0.5, 0.5,
-        0.5, -0.5,
-        0.5, 0.5,
-      ]),
+      new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5]),
       gl.STATIC_DRAW,
     );
     gl.enableVertexAttribArray(0);
@@ -399,7 +501,6 @@ class WebGLRenderer {
   render(positions, width, height, pointSize) {
     const gl = this.gl;
     this.resize(width, height);
-    this.pointSize = pointSize;
     this.count = positions.length / 2;
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
@@ -429,14 +530,20 @@ class WebGPURenderer {
     if (!('gpu' in navigator)) {
       throw new Error('当前浏览器不支持 WebGPU');
     }
+
+    console.info('webgpu create: requesting canvas context');
     const context = canvas.getContext('webgpu');
     if (!context) {
       throw new Error('当前环境无法创建 WebGPU canvas context');
     }
-    const adapter = await navigator.gpu.requestAdapter();
+
+    console.info('webgpu create: requesting adapter');
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
     if (!adapter) {
       throw new Error('无法获取 WebGPU adapter');
     }
+
+    console.info('webgpu create: requesting device');
     const device = await adapter.requestDevice();
     return new WebGPURenderer(canvas, device, context);
   }
@@ -446,15 +553,24 @@ class WebGPURenderer {
     this.canvas = canvas;
     this.device = device;
     this.context = context;
-    this.format = navigator.gpu.getPreferredCanvasFormat();
+    this.format = navigator.gpu.getPreferredCanvasFormat
+      ? navigator.gpu.getPreferredCanvasFormat()
+      : 'bgra8unorm';
+
+    console.info('webgpu configure format', this.format);
     this.context.configure({
       device,
       format: this.format,
       alphaMode: 'opaque',
     });
 
+    this.device.lost.then((info) => {
+      console.error('webgpu device lost', info);
+      updateSupportChip('device 丢失', true);
+      setStatus('WebGPU device lost', true, safeStringify(info));
+    });
+
     this.quadVertexCount = 6;
-    this.resolution = { width: 1, height: 1 };
     this.quadBuffer = device.createBuffer({
       label: 'quad vertices',
       size: 6 * 2 * 4,
@@ -537,9 +653,7 @@ class WebGPURenderer {
         entryPoint: 'fsMain',
         targets: [{ format: this.format }],
       },
-      primitive: {
-        topology: 'triangle-list',
-      },
+      primitive: { topology: 'triangle-list' },
     });
 
     this.bindGroup = device.createBindGroup({
@@ -552,14 +666,11 @@ class WebGPURenderer {
   }
 
   resize(width, height) {
-    this.resolution.width = width;
-    this.resolution.height = height;
+    this.resolution = { width, height };
   }
 
   ensurePositionBuffer(byteLength) {
-    if (this.positionBuffer && this.positionCapacity >= byteLength) {
-      return;
-    }
+    if (this.positionBuffer && this.positionCapacity >= byteLength) return;
     this.positionBuffer?.destroy();
     this.positionCapacity = Math.max(byteLength, 8);
     this.positionBuffer = this.device.createBuffer({
@@ -573,17 +684,14 @@ class WebGPURenderer {
     this.resize(width, height);
     this.ensurePositionBuffer(positions.byteLength);
     this.device.queue.writeBuffer(this.positionBuffer, 0, positions);
-    this.device.queue.writeBuffer(
-      this.uniformBuffer,
-      0,
-      new Float32Array([width, height, pointSize, 0]),
-    );
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, new Float32Array([width, height, pointSize, 0]));
 
+    const texture = this.context.getCurrentTexture();
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: this.context.getCurrentTexture().createView(),
+          view: texture.createView(),
           clearValue: { r: 0.03, g: 0.05, b: 0.09, a: 1 },
           loadOp: 'clear',
           storeOp: 'store',
@@ -594,7 +702,7 @@ class WebGPURenderer {
     pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.quadBuffer);
     pass.setVertexBuffer(1, this.positionBuffer);
-    pass.draw(this.quadVertexCount, positions.length / 2);
+    pass.draw(this.quadVertexCount, positions.length / 2, 0, 0);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
   }
@@ -604,11 +712,6 @@ class WebGPURenderer {
     this.uniformBuffer.destroy();
     this.quadBuffer.destroy();
   }
-}
-
-elements.supportChip.textContent = `WebGPU 支持：${state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持'}`;
-if (!state.webGpuAvailable) {
-  elements.supportChip.classList.add('warn');
 }
 
 function getCanvasSize() {
@@ -624,6 +727,7 @@ function getCanvasSize() {
 }
 
 async function createParticleSystem(mode, count, width, height) {
+  console.info('create particle system', { mode, count, width, height });
   if (mode === 'wasm') {
     return WasmParticleSystem.create(count, width, height);
   }
@@ -631,6 +735,7 @@ async function createParticleSystem(mode, count, width, height) {
 }
 
 async function createRenderer(mode) {
+  console.info('create renderer', mode);
   if (mode === 'webgpu') {
     return WebGPURenderer.create(elements.canvas);
   }
@@ -646,6 +751,7 @@ async function rebuildScene() {
   state.lastTimestamp = 0;
   state.fpsFrames = 0;
   state.fpsTime = 0;
+  setLastError('');
 
   const { width, height } = getCanvasSize();
   state.requestedRenderer = elements.rendererSelect.value;
@@ -669,12 +775,13 @@ async function rebuildScene() {
     elements.modeChip.textContent = `模式：${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
     elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
     elements.particleChip.textContent = `粒子：${state.particleCount.toLocaleString()} @ ${state.pointSize}px`;
-    elements.supportChip.textContent = `WebGPU 支持：${state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持'}`;
+    updateSupportChip(state.webGpuAvailable ? '浏览器已暴露 API' : '当前浏览器不支持', !state.webGpuAvailable);
     setStatus(fallbackNotice || '运行中', Boolean(fallbackNotice));
     state.running = true;
     tick(0);
   } catch (error) {
-    console.error(error);
+    const detail = formatError(error, 'rebuildScene');
+    console.error('renderer init failed', detail);
     if (state.requestedRenderer === 'webgpu') {
       try {
         state.renderer?.destroy?.();
@@ -684,17 +791,20 @@ async function rebuildScene() {
         elements.modeChip.textContent = `模式：${state.computeMode.toUpperCase()} + ${state.requestedRenderer.toUpperCase()}`;
         elements.rendererChip.textContent = `实际渲染：${state.actualRenderer}`;
         elements.particleChip.textContent = `粒子：${state.particleCount.toLocaleString()} @ ${state.pointSize}px`;
-        elements.supportChip.textContent = 'WebGPU 支持：API 可见，但当前环境初始化失败';
-        elements.supportChip.classList.add('warn');
-        setStatus('WebGPU 初始化失败，已回退到 WebGL', true);
+        updateSupportChip('API 可见，但当前环境初始化失败', true);
+        setStatus('WebGPU 初始化失败，已回退到 WebGL', true, detail);
         state.running = true;
         tick(0);
         return;
       } catch (fallbackError) {
-        console.error(fallbackError);
+        const fallbackDetail = `${detail}\n\nFallback Error:\n${formatError(fallbackError, 'fallback-webgl')}`;
+        console.error('fallback webgl failed', fallbackDetail);
+        setStatus('初始化失败', true, fallbackDetail);
+        elements.rendererChip.textContent = '实际渲染：初始化失败';
+        return;
       }
     }
-    setStatus(error.message || '初始化失败', true);
+    setStatus(error.message || '初始化失败', true, detail);
     elements.rendererChip.textContent = '实际渲染：初始化失败';
   }
 }
@@ -704,39 +814,44 @@ function formatMs(value) {
 }
 
 function tick(timestamp) {
-  if (!state.running || !state.renderer || !state.system) {
-    return;
+  if (!state.running || !state.renderer || !state.system) return;
+
+  try {
+    const { width, height } = getCanvasSize();
+    const dt = state.lastTimestamp ? Math.min((timestamp - state.lastTimestamp) / 1000, 0.033) : 0.016;
+    state.lastTimestamp = timestamp;
+
+    const frameStart = performance.now();
+    const updateStart = performance.now();
+    state.system.update(dt, width, height);
+    const positions = state.system.getPositions();
+    const updateEnd = performance.now();
+    state.renderer.render(positions, width, height, state.pointSize);
+    const renderEnd = performance.now();
+    const frameCost = renderEnd - frameStart;
+    const updateCost = updateEnd - updateStart;
+    const renderCost = renderEnd - updateEnd;
+
+    state.fpsFrames += 1;
+    state.fpsTime += dt;
+    if (state.fpsTime >= 0.5) {
+      const fps = state.fpsFrames / state.fpsTime;
+      elements.fpsValue.textContent = fps.toFixed(1);
+      state.fpsFrames = 0;
+      state.fpsTime = 0;
+    }
+
+    elements.frameValue.textContent = formatMs(frameCost);
+    elements.updateValue.textContent = formatMs(updateCost);
+    elements.renderValue.textContent = formatMs(renderCost);
+
+    state.animationFrame = requestAnimationFrame(tick);
+  } catch (error) {
+    const detail = formatError(error, 'tick');
+    state.running = false;
+    console.error('render loop crashed', detail);
+    setStatus('渲染过程中出错', true, detail);
   }
-
-  const { width, height } = getCanvasSize();
-  const dt = state.lastTimestamp ? Math.min((timestamp - state.lastTimestamp) / 1000, 0.033) : 0.016;
-  state.lastTimestamp = timestamp;
-
-  const frameStart = performance.now();
-  const updateStart = performance.now();
-  state.system.update(dt, width, height);
-  const positions = state.system.getPositions();
-  const updateEnd = performance.now();
-  state.renderer.render(positions, width, height, state.pointSize);
-  const renderEnd = performance.now();
-  const frameCost = renderEnd - frameStart;
-  const updateCost = updateEnd - updateStart;
-  const renderCost = renderEnd - updateEnd;
-
-  state.fpsFrames += 1;
-  state.fpsTime += dt;
-  if (state.fpsTime >= 0.5) {
-    const fps = state.fpsFrames / state.fpsTime;
-    elements.fpsValue.textContent = fps.toFixed(1);
-    state.fpsFrames = 0;
-    state.fpsTime = 0;
-  }
-
-  elements.frameValue.textContent = formatMs(frameCost);
-  elements.updateValue.textContent = formatMs(updateCost);
-  elements.renderValue.textContent = formatMs(renderCost);
-
-  state.animationFrame = requestAnimationFrame(tick);
 }
 
 for (const control of [
@@ -751,10 +866,39 @@ for (const control of [
 }
 
 window.addEventListener('resize', () => {
-  if (state.running) {
-    const { width, height } = getCanvasSize();
-    state.renderer?.resize?.(width, height);
+  if (!state.running) return;
+  const { width, height } = getCanvasSize();
+  state.renderer?.resize?.(width, height);
+});
+
+elements.toggleLogsBtn.addEventListener('click', () => {
+  elements.logPanel.open = !elements.logPanel.open;
+  elements.toggleLogsBtn.textContent = elements.logPanel.open ? '隐藏日志' : '显示日志';
+});
+
+elements.logPanel.addEventListener('toggle', () => {
+  elements.toggleLogsBtn.textContent = elements.logPanel.open ? '隐藏日志' : '显示日志';
+});
+
+elements.clearLogsBtn.addEventListener('click', () => {
+  state.logs = [];
+  elements.logOutput.textContent = '暂无日志';
+});
+
+elements.copyErrorBtn.addEventListener('click', async () => {
+  const text = state.lastErrorText || '暂无错误';
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus('错误详情已复制');
+  } catch {
+    setStatus('复制失败，请手动长按日志复制', true);
   }
+});
+
+console.info('app boot', {
+  userAgent: navigator.userAgent,
+  webGpuAvailable: state.webGpuAvailable,
+  hasPreferredCanvasFormat: Boolean(navigator.gpu?.getPreferredCanvasFormat),
 });
 
 rebuildScene();

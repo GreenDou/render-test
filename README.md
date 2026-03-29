@@ -18,6 +18,8 @@
 - 实时显示 `FPS / Frame / Update / Render` 指标
 - 针对手机端布局做了适配，适合直接在移动浏览器打开测试
 - 自动记住上次选择的配置
+- 页面内置调试日志面板，可直接查看 console / error / unhandledrejection
+- 出错时会在页面里展示最近错误详情，并支持一键复制
 - 浏览器不支持 WebGPU，或当前环境虽然暴露了 API 但初始化失败时，会自动回退到 WebGL
 
 ## 技术实现
@@ -68,5 +70,6 @@ npm run build
 ## 注意事项
 
 - WebGPU 支持依赖具体浏览器和系统版本
-- 某些移动浏览器可能会暴露 `navigator.gpu`，但实际无法创建 `webgpu` canvas context，因此页面里做了自动回退处理
+- 某些移动浏览器可能会暴露 `navigator.gpu`，但实际无法创建 `webgpu` canvas context，或在 `configure / getCurrentTexture / pipeline` 阶段失败，因此页面里做了自动回退处理并显示详细错误
+- 页面上的“调试日志”可以直接帮助定位 iOS Safari / Safari Technology Preview / Chrome Android 上的兼容性问题
 - 这个 demo 主要用于前端渲染路径与计算路径的直观对比，不是严格意义上的专业 benchmark 套件
