@@ -1,9 +1,9 @@
 import type { DisplayRenderer } from '../app/types';
 import type { BenchmarkMode, ComputeMode, RendererMode } from '../contracts/types';
-import jsInstanceSystemSource from '../systems/jsInstanceSystem.ts?raw';
-import wasmInstanceUpdateSource from '../wasm/instance-update.wat?raw';
 import webglRendererSource from '../renderers/shaders/webgl.vert.glsl?raw';
 import webgpuRendererSource from '../renderers/shaders/webgpu.wgsl?raw';
+import jsInstanceSystemSource from '../systems/jsInstanceSystem.ts?raw';
+import wasmInstanceUpdateSource from '../wasm/instance-update.wat?raw';
 export type CodeLanguage = 'glsl' | 'wgsl' | 'ts' | 'wat';
 
 export interface CodePanelSection {

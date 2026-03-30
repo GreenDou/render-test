@@ -1,12 +1,12 @@
 import {
-  BENCHMARK_MODE_OPTIONS,
-  COMPUTE_OPTIONS,
-  INSTANCE_OPTIONS,
-  MESH_OPTIONS,
-  RENDERER_OPTIONS,
-  SCALE_OPTIONS,
-  STORAGE_KEY,
-  STRESS_LEVEL_OPTIONS,
+    BENCHMARK_MODE_OPTIONS,
+    COMPUTE_OPTIONS,
+    INSTANCE_OPTIONS,
+    MESH_OPTIONS,
+    RENDERER_OPTIONS,
+    SCALE_OPTIONS,
+    STORAGE_KEY,
+    STRESS_LEVEL_OPTIONS,
 } from '../config/options';
 import type { BenchmarkMode, ComputeMode, MeshLevel, RendererMode } from '../contracts/types';
 import type { AppConfig, ConfigControls } from './types';

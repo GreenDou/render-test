@@ -1,5 +1,5 @@
 import { CANVAS_DPR_CAP } from '../contracts/renderSpec';
-import type { GeometryData, InstanceSystem, Renderer, RendererMode, ComputeMode } from '../contracts/types';
+import type { ComputeMode, GeometryData, InstanceSystem, Renderer, RendererMode } from '../contracts/types';
 import { createTorusKnotGeometry } from '../geometry/torusKnot';
 import { WebGLRenderer } from '../renderers/webglRenderer';
 import { WebGPURenderer } from '../renderers/webgpuRenderer';
@@ -8,12 +8,12 @@ import { WasmInstanceSystem } from '../systems/wasmInstanceSystem';
 import { getCodePanelData } from '../ui/codeCases';
 import { createFreshCanvas } from './dom';
 import {
-  escapeHtml,
-  formatDurationMs,
-  formatError,
-  formatFpsWithJitter,
-  formatUploadBytes,
-  safeStringify,
+    escapeHtml,
+    formatDurationMs,
+    formatError,
+    formatFpsWithJitter,
+    formatUploadBytes,
+    safeStringify,
 } from './formatting';
 import { applySavedConfig, persistConfig, readConfigFromElements } from './persistence';
 import { createInitialState, type AppElements, type AppState } from './types';

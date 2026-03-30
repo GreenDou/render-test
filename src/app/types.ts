@@ -1,12 +1,12 @@
 import { DEFAULT_CONFIG } from '../config/options';
 import type {
-  BenchmarkMode,
-  ComputeMode,
-  GeometryData,
-  InstanceSystem,
-  MeshLevel,
-  Renderer,
-  RendererMode,
+    BenchmarkMode,
+    ComputeMode,
+    GeometryData,
+    InstanceSystem,
+    MeshLevel,
+    Renderer,
+    RendererMode,
 } from '../contracts/types';
 
 export type DisplayRenderer = 'WebGL' | 'WebGPU' | 'N/A' | '--' | '初始化失败';

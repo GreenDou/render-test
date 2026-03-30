@@ -1,12 +1,12 @@
 import {
-  BENCHMARK_MODE_OPTIONS,
-  COMPUTE_OPTIONS,
-  DEFAULT_CONFIG,
-  INSTANCE_OPTIONS,
-  MESH_OPTIONS,
-  RENDERER_OPTIONS,
-  SCALE_OPTIONS,
-  STRESS_LEVEL_OPTIONS,
+    BENCHMARK_MODE_OPTIONS,
+    COMPUTE_OPTIONS,
+    DEFAULT_CONFIG,
+    INSTANCE_OPTIONS,
+    MESH_OPTIONS,
+    RENDERER_OPTIONS,
+    SCALE_OPTIONS,
+    STRESS_LEVEL_OPTIONS,
 } from '../config/options';
 import type { SelectOption } from '../contracts/types';
 import type { AppElements } from './types';

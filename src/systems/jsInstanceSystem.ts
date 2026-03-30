@@ -1,16 +1,16 @@
 import {
-  FORCE_BASE,
-  FORCE_BIAS,
-  FORCE_CAP,
-  INSTANCE_BOUNDS,
-  INSTANCE_STRIDE,
-  PHASE_SPEED,
-  RENDER_INSTANCE_STRIDE,
-  SWIRL_STRENGTH,
-  VELOCITY_DAMPING,
-  VERTICAL_WAVE_STRENGTH,
-  computeVerticalWave,
-  wrapPhase,
+    FORCE_BASE,
+    FORCE_BIAS,
+    FORCE_CAP,
+    INSTANCE_BOUNDS,
+    INSTANCE_STRIDE,
+    PHASE_SPEED,
+    RENDER_INSTANCE_STRIDE,
+    SWIRL_STRENGTH,
+    VELOCITY_DAMPING,
+    VERTICAL_WAVE_STRENGTH,
+    computeVerticalWave,
+    wrapPhase,
 } from '../contracts/renderSpec';
 import type { InstanceSystem } from '../contracts/types';
 
