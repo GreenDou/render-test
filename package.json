@@ -3,11 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Mobile-friendly rendering benchmark demo comparing WebGL/WebGPU and JS/WebAssembly simulation paths.",
+  "description": "Mobile-friendly rendering benchmark demo comparing WebGL/WebGPU and TypeScript/WebAssembly simulation paths.",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/gen-wasm.mjs",
-    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "prebuild": "tsx scripts/gen-wasm.ts",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview"
   },
   "repository": {
@@ -16,6 +17,10 @@
   },
   "homepage": "https://greendou.github.io/render-test/",
   "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@webgpu/types": "^0.1.69",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
     "vite": "^7.1.9",
     "wabt": "^1.0.37"
   }

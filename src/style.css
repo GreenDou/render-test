@@ -9,6 +9,10 @@
   box-sizing: border-box;
 }
 
+.hidden {
+  display: none !important;
+}
+
 html,
 body,
 #app {
@@ -144,7 +148,8 @@ h1 {
 }
 
 .error-box,
-.log-panel {
+.log-panel,
+.code-panel {
   margin-top: 12px;
   padding: 12px;
   border-radius: 14px;
@@ -152,12 +157,9 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.error-box.hidden {
-  display: none;
-}
-
 .error-title,
-.log-panel summary {
+.log-panel summary,
+.code-panel summary {
   color: #ffd28a;
   font-size: 0.88rem;
   font-weight: 600;
@@ -177,6 +179,118 @@ h1 {
 
 .log-panel summary {
   cursor: pointer;
+}
+
+.code-panel {
+  background: rgba(15, 23, 45, 0.58);
+}
+
+.code-panel.warn {
+  border-color: rgba(255, 210, 138, 0.35);
+}
+
+.code-panel summary {
+  cursor: pointer;
+}
+
+.code-intro {
+  margin: 10px 0 0;
+  color: #c7d4f0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.code-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.code-note {
+  padding: 9px 10px;
+  border-radius: 10px;
+  color: #ffdba4;
+  background: rgba(255, 210, 138, 0.08);
+  border: 1px solid rgba(255, 210, 138, 0.14);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.code-sections {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.code-card {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.code-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.code-card-title {
+  color: #f5f7fb;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.code-card-source {
+  margin-top: 4px;
+  color: #87a1cb;
+  font-size: 0.74rem;
+}
+
+.code-card-lang {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(125, 226, 255, 0.12);
+  color: #7de2ff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.code-card-description {
+  margin: 10px 0 0;
+  color: #b7c8e7;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.code-snippet {
+  margin: 10px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(4, 8, 18, 0.86);
+  border: 1px solid rgba(125, 226, 255, 0.12);
+  color: #dfe8fb;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  overflow: auto;
+  max-height: 260px;
+}
+
+.code-snippet code {
+  font-family: 'SFMono-Regular', 'Cascadia Code', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.code-empty {
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  color: #a8bad9;
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 .canvas-wrap {
@@ -248,6 +362,10 @@ canvas {
   }
 
   .title-row {
+    flex-direction: column;
+  }
+
+  .code-card-header {
     flex-direction: column;
   }
 }

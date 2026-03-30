@@ -3,7 +3,7 @@
 一个可在手机端运行的渲染测试 demo，用来对比：
 
 - WebGL vs WebGPU 渲染
-- JavaScript vs WebAssembly 实例仿真逻辑
+- TypeScript / JavaScript vs WebAssembly 实例仿真逻辑
 - 复杂 3D 网格在大量实例下的 FPS / 帧耗时
 
 在线地址：
@@ -13,22 +13,26 @@
 ## 功能
 
 - 通过下拉菜单切换渲染后端：`WebGL / WebGPU`
-- 通过下拉菜单切换计算实现：`JavaScript / WebAssembly`
+- 通过下拉菜单切换计算实现：`TypeScript / WebAssembly`
 - 通过下拉菜单切换网格复杂度、实例数量、压力等级、实例缩放
 - 实时显示 `FPS / Frame / Update / Render` 指标
+- 新增“关键代码”面板，直接展示当前案例真正运行的 shader / 仿真核心代码片段
 - 页面内置调试日志面板，可直接查看 console / error / unhandledrejection
 - 出错时会在页面里展示最近错误详情，并支持一键复制
 - 自动记住上次选择的配置
 - 切换 WebGL / WebGPU 时会重建 canvas，避免同一 canvas 上下文类型切换导致的初始化失败
 - 浏览器不支持 WebGPU，或当前环境虽然暴露了 API 但初始化失败时，会自动回退到 WebGL
+- WebGL / WebGPU 共享同一套旋转、颜色和实例数据语义，保证渲染效果一致
+- TypeScript / WebAssembly 共享同一套实例更新公式，保证轨迹语义一致
 
 ## 技术实现
 
-- 使用 `Vite` 作为构建工具
-- 使用 `WebGL2` 和 `WebGPU` 两条渲染路径
+- 使用 `TypeScript` + `Vite` 作为开发与构建工具
+- 使用 `WebGL2` 和 `WebGPU` 两条渲染路径，并统一渲染语义
 - benchmark 不再使用简单粒子点，而是使用 **复杂 torus knot 网格 + 大量实例化渲染**
-- 使用 `JavaScript` 与 `WebAssembly` 两条实例仿真更新路径
-- WebAssembly 模块由 `scripts/gen-wasm.mjs` 在构建前自动生成
+- 使用 `TypeScript` 与 `WebAssembly` 两条实例仿真更新路径
+- WebAssembly 模块由 `src/wasm/instance-update.wat` 通过 `scripts/gen-wasm.ts` 在构建前自动生成
+- 关键代码面板直接复用真实 shader / WAT / TypeScript 源文件片段
 - Pages 路由基址已配置为 `/render-test/`
 
 ## 本地运行
@@ -36,6 +40,12 @@
 ```bash
 npm install
 npm run dev
+```
+
+## 类型检查
+
+```bash
+npm run typecheck
 ```
 
 ## 构建
@@ -61,9 +71,9 @@ npm run build
 
 建议在同一台设备上依次切换以下组合，观察 FPS 和帧耗时变化：
 
-1. `WebGL + JavaScript`
+1. `WebGL + TypeScript / JS`
 2. `WebGL + WebAssembly`
-3. `WebGPU + JavaScript`
+3. `WebGPU + TypeScript / JS`
 4. `WebGPU + WebAssembly`
 
 并配合以下配置放大差异：
@@ -77,5 +87,5 @@ npm run build
 - WebGPU 支持依赖具体浏览器和系统版本
 - 某些移动浏览器可能会暴露 `navigator.gpu`，但实际无法创建 `webgpu` canvas context，或在 `configure / getCurrentTexture / pipeline` 阶段失败，因此页面里做了自动回退处理并显示详细错误
 - 某些浏览器对同一个 canvas 的上下文类型切换不稳定，因此这里切换渲染后端时会直接重建 canvas
-- 页面上的“调试日志”可以直接帮助定位 iOS Safari / Safari Technology Preview / Chrome Android 上的兼容性问题
+- 页面的“调试日志”和“关键代码”面板可以直接帮助定位 iOS Safari / Safari Technology Preview / Chrome Android 上的兼容性问题
 - 这个 demo 主要用于前端渲染路径与计算路径的直观对比，不是严格意义上的专业 benchmark 套件

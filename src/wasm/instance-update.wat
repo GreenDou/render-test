@@ -1,11 +1,4 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import wabtFactory from 'wabt';
-
-const outDir = path.resolve('src/wasm');
-const outFile = path.join(outDir, 'instance-update.wasm');
-
-const wat = `(module
+(module
   (memory (export "memory") 64)
   (func (export "update")
     (param $ptr i32)
@@ -28,6 +21,9 @@ const wat = `(module
     (local $dist2 f32)
     (local $invDist f32)
     (local $force f32)
+    (local $wave f32)
+
+    (drop (local.get $time))
 
     (block $break
       (loop $loop
@@ -44,6 +40,7 @@ const wat = `(module
         (local.set $vz (f32.load offset=20 (local.get $base)))
         (local.set $phase (f32.load offset=24 (local.get $base)))
 
+        ;; @panel-start wasm-update
         (local.set $dx (f32.neg (local.get $x)))
         (local.set $dy (f32.neg (local.get $y)))
         (local.set $dz (f32.neg (local.get $z)))
@@ -61,6 +58,15 @@ const wat = `(module
         )
         (local.set $invDist (f32.div (f32.const 1.0) (f32.sqrt (local.get $dist2))))
         (local.set $force (f32.min (f32.const 24.0) (f32.div (f32.const 18.0) (local.get $dist2))))
+        (local.set $wave
+          (f32.sub
+            (f32.sub
+              (f32.const 3.1415927)
+              (f32.abs (f32.sub (local.get $phase) (f32.const 3.1415927)))
+            )
+            (f32.const 1.5707964)
+          )
+        )
 
         (local.set $vx
           (f32.add
@@ -80,7 +86,7 @@ const wat = `(module
             (f32.mul
               (f32.add
                 (f32.mul (f32.mul (local.get $dy) (local.get $invDist)) (local.get $force))
-                (f32.mul (local.get $phase) (f32.const 0.15))
+                (f32.mul (local.get $wave) (f32.const 0.45))
               )
               (local.get $dt)
             )
@@ -107,6 +113,12 @@ const wat = `(module
         (local.set $y (f32.add (local.get $y) (f32.mul (local.get $vy) (local.get $dt))))
         (local.set $z (f32.add (local.get $z) (f32.mul (local.get $vz) (local.get $dt))))
         (local.set $phase (f32.add (local.get $phase) (f32.mul (local.get $dt) (f32.const 0.8))))
+        (if (f32.ge (local.get $phase) (f32.const 6.2831855))
+          (then
+            (local.set $phase (f32.sub (local.get $phase) (f32.const 6.2831855)))
+          )
+        )
+        ;; @panel-end wasm-update
 
         (if (f32.gt (f32.abs (local.get $x)) (local.get $bounds))
           (then (local.set $vx (f32.neg (local.get $vx))))
@@ -131,12 +143,4 @@ const wat = `(module
       )
     )
   )
-)`;
-
-const wabt = await wabtFactory();
-const parsed = wabt.parseWat('instance-update.wat', wat);
-const { buffer } = parsed.toBinary({ log: false, write_debug_names: true });
-
-await fs.mkdir(outDir, { recursive: true });
-await fs.writeFile(outFile, Buffer.from(buffer));
-console.log(`Generated ${outFile}`);
+)
