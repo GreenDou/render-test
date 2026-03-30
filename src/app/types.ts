@@ -1,36 +1,64 @@
-import { DEFAULT_CONFIG } from '../config/options';
+import { DEFAULT_CONFIG, type ControlFieldKey } from '../config/options';
 import type {
     BenchmarkMode,
     ComputeMode,
-    GeometryData,
-    InstanceSystem,
+    CullingMode,
     MeshLevel,
+    OptimizationPath,
     Renderer,
     RendererMode,
+    ScenePreset,
+    VisibilityStrategy,
 } from '../contracts/types';
+import type { SceneRuntime } from '../scenes/sceneFactory';
 
 export type DisplayRenderer = 'WebGL' | 'WebGPU' | 'N/A' | '--' | '初始化失败';
 
 export interface AppConfig {
+  scenePreset: ScenePreset;
   benchmarkMode: BenchmarkMode;
+  optimizationPath: OptimizationPath;
+  visibilityStrategy: VisibilityStrategy;
   requestedRenderer: RendererMode;
   computeMode: ComputeMode;
   meshLevel: MeshLevel;
-  instanceCount: number;
+  uniqueModelCount: number;
+  instancesPerModel: number;
   stressLevel: number;
   instanceScale: number;
+  useRenderBundles: boolean;
+  lightingEnabled: boolean;
+  cullingMode: CullingMode;
 }
 
 export interface AppElements {
+  appShell: HTMLElement;
   canvasHost: HTMLDivElement;
+  scenePresetSelect: HTMLSelectElement;
+  canvasOnlyToggleBtn: HTMLButtonElement;
+  exitCanvasOnlyBtn: HTMLButtonElement;
+  settingsToggleBtn: HTMLButtonElement;
+  closeSettingsBtn: HTMLButtonElement;
+  settingsLayer: HTMLDivElement;
   benchmarkModeSelect: HTMLSelectElement;
+  optimizationPathSelect: HTMLSelectElement;
+  visibilityStrategySelect: HTMLSelectElement;
   rendererSelect: HTMLSelectElement;
+  renderBundleToggle: HTMLInputElement;
   computeSelect: HTMLSelectElement;
+  lightingToggle: HTMLInputElement;
+  cullingSelect: HTMLSelectElement;
   meshSelect: HTMLSelectElement;
-  instanceSelect: HTMLSelectElement;
+  uniqueModelCountRange: HTMLInputElement;
+  uniqueModelCountValue: HTMLDivElement;
+  instancesPerModelRange: HTMLInputElement;
+  instancesPerModelValue: HTMLDivElement;
   stressSelect: HTMLSelectElement;
   scaleSelect: HTMLSelectElement;
+  fieldOptionNotes: Record<ControlFieldKey, HTMLDivElement>;
+  fpsChart: HTMLCanvasElement;
   fpsValue: HTMLDivElement;
+  fpsMetaValue: HTMLDivElement;
   frameValue: HTMLDivElement;
   updateValue: HTMLDivElement;
   renderValue: HTMLDivElement;
@@ -56,11 +84,18 @@ export interface AppElements {
 
 export type ConfigControls = Pick<
   AppElements,
+  | 'scenePresetSelect'
   | 'benchmarkModeSelect'
+  | 'optimizationPathSelect'
+  | 'visibilityStrategySelect'
   | 'rendererSelect'
+  | 'renderBundleToggle'
   | 'computeSelect'
+  | 'lightingToggle'
+  | 'cullingSelect'
   | 'meshSelect'
-  | 'instanceSelect'
+  | 'uniqueModelCountRange'
+  | 'instancesPerModelRange'
   | 'stressSelect'
   | 'scaleSelect'
 >;
@@ -69,14 +104,13 @@ export interface AppState extends AppConfig {
   canvas: HTMLCanvasElement | null;
   actualRenderer: DisplayRenderer;
   renderer: Renderer | null;
-  system: InstanceSystem | null;
-  geometry: GeometryData | null;
+  scene: SceneRuntime | null;
   animationFrame: number;
   lastTimestamp: number;
   elapsedTime: number;
   fpsFrames: number;
   fpsTime: number;
-  frameIntervalSamples: number[];
+  framePaceSamples: number[];
   metricWindowTime: number;
   metricWindowFrames: number;
   metricWindowFrameCost: number;
@@ -84,7 +118,6 @@ export interface AppState extends AppConfig {
   metricWindowRenderCost: number;
   metricWindowDrawCalls: number;
   metricWindowUploadBytes: number;
-  staticInstanceData: Float32Array | null;
   running: boolean;
   webGpuAvailable: boolean;
   logs: string[];
@@ -97,14 +130,13 @@ export function createInitialState(): AppState {
     ...DEFAULT_CONFIG,
     actualRenderer: '--',
     renderer: null,
-    system: null,
-    geometry: null,
+    scene: null,
     animationFrame: 0,
     lastTimestamp: 0,
     elapsedTime: 0,
     fpsFrames: 0,
     fpsTime: 0,
-    frameIntervalSamples: [],
+    framePaceSamples: [],
     metricWindowTime: 0,
     metricWindowFrames: 0,
     metricWindowFrameCost: 0,
@@ -112,7 +144,6 @@ export function createInitialState(): AppState {
     metricWindowRenderCost: 0,
     metricWindowDrawCalls: 0,
     metricWindowUploadBytes: 0,
-    staticInstanceData: null,
     running: false,
     webGpuAvailable: 'gpu' in navigator,
     logs: [],

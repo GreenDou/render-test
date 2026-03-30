@@ -1,6 +1,7 @@
 struct Uniforms {
   viewProj : mat4x4<f32>,
   time : f32,
+  lightingEnabled : f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms : Uniforms;
@@ -56,6 +57,7 @@ fn vsMain(input : VSIn) -> VSOut {
 fn fsMain(input : VSOut) -> @location(0) vec4<f32> {
   let light = normalize(vec3<f32>(0.5, 0.7, 0.8));
   let diff = max(dot(normalize(input.normal), light), 0.0);
-  let color = input.color * (0.25 + diff * 0.75);
+  let litMix = (1.0 - uniforms.lightingEnabled) + uniforms.lightingEnabled * (0.25 + diff * 0.75);
+  let color = input.color * litMix;
   return vec4<f32>(color, 1.0);
 }

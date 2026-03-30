@@ -127,3 +127,51 @@ export function multiplyMat4(out: Float32Array, a: MatrixLike, b: MatrixLike): F
 
   return out;
 }
+
+function writeNormalizedPlane(
+  out: Float32Array,
+  offset: number,
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+): void {
+  const length = Math.hypot(x, y, z) || 1;
+  out[offset] = x / length;
+  out[offset + 1] = y / length;
+  out[offset + 2] = z / length;
+  out[offset + 3] = w / length;
+}
+
+export function extractFrustumPlanes(out: Float32Array, matrix: MatrixLike): Float32Array {
+  writeNormalizedPlane(out, 0, matrix[3] + matrix[0], matrix[7] + matrix[4], matrix[11] + matrix[8], matrix[15] + matrix[12]);
+  writeNormalizedPlane(out, 4, matrix[3] - matrix[0], matrix[7] - matrix[4], matrix[11] - matrix[8], matrix[15] - matrix[12]);
+  writeNormalizedPlane(out, 8, matrix[3] + matrix[1], matrix[7] + matrix[5], matrix[11] + matrix[9], matrix[15] + matrix[13]);
+  writeNormalizedPlane(out, 12, matrix[3] - matrix[1], matrix[7] - matrix[5], matrix[11] - matrix[9], matrix[15] - matrix[13]);
+  writeNormalizedPlane(out, 16, matrix[3] + matrix[2], matrix[7] + matrix[6], matrix[11] + matrix[10], matrix[15] + matrix[14]);
+  writeNormalizedPlane(out, 20, matrix[3] - matrix[2], matrix[7] - matrix[6], matrix[11] - matrix[10], matrix[15] - matrix[14]);
+
+  return out;
+}
+
+export function sphereIntersectsFrustum(
+  planes: MatrixLike,
+  centerX: number,
+  centerY: number,
+  centerZ: number,
+  radius: number,
+): boolean {
+  for (let planeOffset = 0; planeOffset < 24; planeOffset += 4) {
+    const distance =
+      planes[planeOffset] * centerX +
+      planes[planeOffset + 1] * centerY +
+      planes[planeOffset + 2] * centerZ +
+      planes[planeOffset + 3];
+
+    if (distance < -radius) {
+      return false;
+    }
+  }
+
+  return true;
+}

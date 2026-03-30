@@ -1,29 +1,72 @@
 import type { GeometryData, MeshConfig, MeshLevel } from '../contracts/types';
+import { createGeometry } from './primitives';
 
 type Vec3 = [number, number, number];
 
-export function getMeshConfig(level: MeshLevel): MeshConfig {
+export interface TorusKnotGeometryConfig extends MeshConfig {
+  radius: number;
+  tubeRadius: number;
+  heightScale: number;
+  phaseOffset: number;
+}
+
+export function getMeshConfig(level: MeshLevel): TorusKnotGeometryConfig {
   if (level === 'medium') {
-    return { tubularSegments: 96, radialSegments: 20, p: 2, q: 3 };
+    return {
+      tubularSegments: 96,
+      radialSegments: 20,
+      p: 2,
+      q: 3,
+      radius: 1.2,
+      tubeRadius: 0.24,
+      heightScale: 1,
+      phaseOffset: 0,
+    };
   }
 
   if (level === 'ultra') {
-    return { tubularSegments: 220, radialSegments: 34, p: 3, q: 5 };
+    return {
+      tubularSegments: 220,
+      radialSegments: 34,
+      p: 3,
+      q: 5,
+      radius: 1.24,
+      tubeRadius: 0.24,
+      heightScale: 1,
+      phaseOffset: 0,
+    };
   }
 
-  return { tubularSegments: 160, radialSegments: 28, p: 2, q: 5 };
+  return {
+    tubularSegments: 160,
+    radialSegments: 28,
+    p: 2,
+    q: 5,
+    radius: 1.22,
+    tubeRadius: 0.24,
+    heightScale: 1,
+    phaseOffset: 0,
+  };
 }
 
-function torusKnotPoint(u: number, p: number, q: number, radius = 1.2): Vec3 {
-  const cosU = Math.cos(u);
-  const sinU = Math.sin(u);
-  const quOverP = (q / p) * u;
+function torusKnotPoint(
+  u: number,
+  p: number,
+  q: number,
+  radius = 1.2,
+  heightScale = 1,
+  phaseOffset = 0,
+): Vec3 {
+  const shiftedU = u + phaseOffset;
+  const cosU = Math.cos(shiftedU);
+  const sinU = Math.sin(shiftedU);
+  const quOverP = (q / p) * shiftedU;
   const cosQuOverP = Math.cos(quOverP);
 
   return [
     radius * (2 + cosQuOverP) * 0.5 * cosU,
     radius * (2 + cosQuOverP) * 0.5 * sinU,
-    radius * Math.sin(quOverP) * 0.5,
+    radius * Math.sin(quOverP) * 0.5 * heightScale,
   ];
 }
 
@@ -52,17 +95,23 @@ function mul3(v: Vec3, scalar: number): Vec3 {
   return [v[0] * scalar, v[1] * scalar, v[2] * scalar];
 }
 
-export function createTorusKnotGeometry(level: MeshLevel): GeometryData {
-  const { tubularSegments, radialSegments, p, q } = getMeshConfig(level);
+export function createTorusKnotGeometryFromConfig(config: TorusKnotGeometryConfig): GeometryData {
+  const tubularSegments = Math.max(48, Math.round(config.tubularSegments));
+  const radialSegments = Math.max(8, Math.round(config.radialSegments));
+  const p = Math.max(2, Math.round(config.p));
+  const q = Math.max(3, Math.round(config.q));
+  const radius = config.radius;
+  const tubeRadius = config.tubeRadius;
+  const heightScale = config.heightScale;
+  const phaseOffset = config.phaseOffset;
   const positions: number[] = [];
   const normals: number[] = [];
   const indices: number[] = [];
-  const tubeRadius = 0.24;
 
   for (let i = 0; i <= tubularSegments; i += 1) {
     const u = (i / tubularSegments) * Math.PI * 2 * p;
-    const point = torusKnotPoint(u, p, q);
-    const nextPoint = torusKnotPoint(u + 0.01, p, q);
+    const point = torusKnotPoint(u, p, q, radius, heightScale, phaseOffset);
+    const nextPoint = torusKnotPoint(u + 0.01, p, q, radius, heightScale, phaseOffset);
     const tangent = normalize3(sub3(nextPoint, point));
     const normal = normalize3(add3(nextPoint, point));
     const binormal = normalize3(cross3(tangent, normal));
@@ -89,25 +138,9 @@ export function createTorusKnotGeometry(level: MeshLevel): GeometryData {
     }
   }
 
-  const positionsArray = new Float32Array(positions);
-  const normalsArray = new Float32Array(normals);
-  const interleaved = new Float32Array((positionsArray.length / 3) * 6);
+  return createGeometry(positions, normals, indices);
+}
 
-  for (let sourceIndex = 0, targetIndex = 0; sourceIndex < positionsArray.length; sourceIndex += 3, targetIndex += 6) {
-    interleaved[targetIndex] = positionsArray[sourceIndex];
-    interleaved[targetIndex + 1] = positionsArray[sourceIndex + 1];
-    interleaved[targetIndex + 2] = positionsArray[sourceIndex + 2];
-    interleaved[targetIndex + 3] = normalsArray[sourceIndex];
-    interleaved[targetIndex + 4] = normalsArray[sourceIndex + 1];
-    interleaved[targetIndex + 5] = normalsArray[sourceIndex + 2];
-  }
-
-  return {
-    positions: positionsArray,
-    normals: normalsArray,
-    interleaved,
-    indices: new Uint32Array(indices),
-    vertexCount: positionsArray.length / 3,
-    triangleCount: indices.length / 3,
-  };
+export function createTorusKnotGeometry(level: MeshLevel): GeometryData {
+  return createTorusKnotGeometryFromConfig(getMeshConfig(level));
 }

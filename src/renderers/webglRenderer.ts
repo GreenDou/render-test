@@ -1,8 +1,22 @@
-import { CAMERA_CENTER, CAMERA_EYE, CAMERA_UP, CLEAR_COLOR } from '../contracts/renderSpec';
-import type { GeometryData, Renderer, UploadMode } from '../contracts/types';
+import { CAMERA_CENTER, CAMERA_EYE, CAMERA_UP, CLEAR_COLOR, RENDER_INSTANCE_STRIDE } from '../contracts/renderSpec';
+import type { GeometryData, RenderBatch, Renderer, RenderOptions } from '../contracts/types';
 import { lookAt, multiplyMat4, perspective } from '../math/matrix';
 import fragmentShaderSource from './shaders/webgl.frag.glsl?raw';
 import vertexShaderSource from './shaders/webgl.vert.glsl?raw';
+
+interface BatchResources {
+  geometry: GeometryData;
+  vao: WebGLVertexArrayObject;
+  positionBuffer: WebGLBuffer;
+  normalBuffer: WebGLBuffer;
+  instanceBuffer: WebGLBuffer;
+  indexBuffer: WebGLBuffer;
+  indexType: number;
+  instanceCount: number;
+  staticUploaded: boolean;
+}
+
+export interface WebGLRendererOptions extends RenderOptions {}
 
 function requireResource<T>(resource: T | null, message: string): T {
   if (!resource) {
@@ -14,25 +28,21 @@ function requireResource<T>(resource: T | null, message: string): T {
 
 export class WebGLRenderer implements Renderer {
   readonly type = 'WebGL' as const;
-
   readonly gl: WebGL2RenderingContext;
 
   private readonly mvp = new Float32Array(16);
   private readonly proj = new Float32Array(16);
   private readonly view = new Float32Array(16);
   private readonly program: WebGLProgram;
-  private readonly vao: WebGLVertexArrayObject;
-  private readonly positionBuffer: WebGLBuffer;
-  private readonly normalBuffer: WebGLBuffer;
-  private readonly instanceBuffer: WebGLBuffer;
-  private readonly indexBuffer: WebGLBuffer;
   private readonly uViewProj: WebGLUniformLocation;
   private readonly uTime: WebGLUniformLocation;
-  private instanceCount = 0;
+  private readonly uLightingEnabled: WebGLUniformLocation;
+  private readonly batchResources = new Map<string, BatchResources>();
+  private batchOrder: string[] = [];
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly geometry: GeometryData,
+    private readonly options: WebGLRendererOptions,
   ) {
     const gl = canvas.getContext('webgl2', {
       antialias: false,
@@ -48,49 +58,39 @@ export class WebGLRenderer implements Renderer {
     this.program = this.createProgram(vertexShaderSource, fragmentShaderSource);
     this.uViewProj = requireResource(gl.getUniformLocation(this.program, 'uViewProj'), '找不到 WebGL uniform: uViewProj');
     this.uTime = requireResource(gl.getUniformLocation(this.program, 'uTime'), '找不到 WebGL uniform: uTime');
-    this.vao = requireResource(gl.createVertexArray(), '创建 WebGL VAO 失败');
-    this.positionBuffer = requireResource(gl.createBuffer(), '创建 WebGL position buffer 失败');
-    this.normalBuffer = requireResource(gl.createBuffer(), '创建 WebGL normal buffer 失败');
-    this.instanceBuffer = requireResource(gl.createBuffer(), '创建 WebGL instance buffer 失败');
-    this.indexBuffer = requireResource(gl.createBuffer(), '创建 WebGL index buffer 失败');
-
-    gl.bindVertexArray(this.vao);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, geometry.positions, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, geometry.normals, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
-    const stride = 5 * Float32Array.BYTES_PER_ELEMENT;
-    gl.enableVertexAttribArray(2);
-    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 0);
-    gl.vertexAttribDivisor(2, 1);
-    gl.enableVertexAttribArray(3);
-    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 12);
-    gl.vertexAttribDivisor(3, 1);
-    gl.enableVertexAttribArray(4);
-    gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 16);
-    gl.vertexAttribDivisor(4, 1);
-
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geometry.indices, gl.STATIC_DRAW);
-    gl.bindVertexArray(null);
+    this.uLightingEnabled = requireResource(
+      gl.getUniformLocation(this.program, 'uLightingEnabled'),
+      '找不到 WebGL uniform: uLightingEnabled',
+    );
 
     gl.enable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
   }
 
-  setInstanceData(instanceData: Float32Array, uploadMode: UploadMode = 'dynamic'): void {
-    const gl = this.gl;
-    this.instanceCount = instanceData.length / 5;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, instanceData, uploadMode === 'static' ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+  setSceneBatches(batches: readonly RenderBatch[]): void {
+    const nextOrder = batches.map((batch) => batch.id);
+    this.syncBatchResources(batches);
+    this.batchOrder = nextOrder;
+
+    for (const batch of batches) {
+      const resources = this.batchResources.get(batch.id);
+      if (!resources) {
+        continue;
+      }
+
+      const nextInstanceCount = batch.instanceData.length / RENDER_INSTANCE_STRIDE;
+      if (batch.uploadMode === 'static' && resources.staticUploaded && resources.instanceCount === nextInstanceCount) {
+        continue;
+      }
+
+      resources.instanceCount = nextInstanceCount;
+      resources.staticUploaded = batch.uploadMode === 'static';
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, resources.instanceBuffer);
+      this.gl.bufferData(
+        this.gl.ARRAY_BUFFER,
+        batch.instanceData,
+        batch.uploadMode === 'static' ? this.gl.STATIC_DRAW : this.gl.DYNAMIC_DRAW,
+      );
+    }
   }
 
   render(width: number, height: number, time: number): void {
@@ -101,24 +101,129 @@ export class WebGLRenderer implements Renderer {
     lookAt(this.view, CAMERA_EYE, CAMERA_CENTER, CAMERA_UP);
     multiplyMat4(this.mvp, this.proj, this.view);
 
+    if (this.options.cullingMode === 'back') {
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+    } else {
+      gl.disable(gl.CULL_FACE);
+    }
+
     gl.clearColor(CLEAR_COLOR.r, CLEAR_COLOR.g, CLEAR_COLOR.b, CLEAR_COLOR.a);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uViewProj, false, this.mvp);
     gl.uniform1f(this.uTime, time);
-    gl.bindVertexArray(this.vao);
-    gl.drawElementsInstanced(gl.TRIANGLES, this.geometry.indices.length, gl.UNSIGNED_INT, 0, this.instanceCount);
+    gl.uniform1f(this.uLightingEnabled, this.options.lightingEnabled ? 1 : 0);
+
+    for (const batchId of this.batchOrder) {
+      const resources = this.batchResources.get(batchId);
+      if (!resources || resources.instanceCount === 0) {
+        continue;
+      }
+
+      gl.bindVertexArray(resources.vao);
+      gl.drawElementsInstanced(gl.TRIANGLES, resources.geometry.indices.length, resources.indexType, 0, resources.instanceCount);
+    }
+
     gl.bindVertexArray(null);
   }
 
   destroy(): void {
     const gl = this.gl;
-    gl.deleteBuffer(this.positionBuffer);
-    gl.deleteBuffer(this.normalBuffer);
-    gl.deleteBuffer(this.instanceBuffer);
-    gl.deleteBuffer(this.indexBuffer);
-    gl.deleteVertexArray(this.vao);
+    this.batchResources.forEach((resources) => {
+      gl.deleteBuffer(resources.positionBuffer);
+      gl.deleteBuffer(resources.normalBuffer);
+      gl.deleteBuffer(resources.instanceBuffer);
+      gl.deleteBuffer(resources.indexBuffer);
+      gl.deleteVertexArray(resources.vao);
+    });
+    this.batchResources.clear();
     gl.deleteProgram(this.program);
+  }
+
+  private syncBatchResources(batches: readonly RenderBatch[]): void {
+    const nextIds = new Set(batches.map((batch) => batch.id));
+
+    this.batchResources.forEach((resources, batchId) => {
+      if (nextIds.has(batchId)) {
+        return;
+      }
+
+      this.destroyBatchResources(resources);
+      this.batchResources.delete(batchId);
+    });
+
+    for (const batch of batches) {
+      const existingResources = this.batchResources.get(batch.id);
+      if (existingResources && existingResources.geometry === batch.geometry) {
+        continue;
+      }
+
+      if (existingResources) {
+        this.destroyBatchResources(existingResources);
+      }
+
+      this.batchResources.set(batch.id, this.createBatchResources(batch.geometry));
+    }
+  }
+
+  private createBatchResources(geometry: GeometryData): BatchResources {
+    const gl = this.gl;
+    const vao = requireResource(gl.createVertexArray(), '创建 WebGL VAO 失败');
+    const positionBuffer = requireResource(gl.createBuffer(), '创建 WebGL position buffer 失败');
+    const normalBuffer = requireResource(gl.createBuffer(), '创建 WebGL normal buffer 失败');
+    const instanceBuffer = requireResource(gl.createBuffer(), '创建 WebGL instance buffer 失败');
+    const indexBuffer = requireResource(gl.createBuffer(), '创建 WebGL index buffer 失败');
+
+    gl.bindVertexArray(vao);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, geometry.positions, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, geometry.normals, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, RENDER_INSTANCE_STRIDE * Float32Array.BYTES_PER_ELEMENT, gl.DYNAMIC_DRAW);
+    const stride = RENDER_INSTANCE_STRIDE * Float32Array.BYTES_PER_ELEMENT;
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 0);
+    gl.vertexAttribDivisor(2, 1);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 12);
+    gl.vertexAttribDivisor(3, 1);
+    gl.enableVertexAttribArray(4);
+    gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 16);
+    gl.vertexAttribDivisor(4, 1);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geometry.indices, gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+
+    return {
+      geometry,
+      vao,
+      positionBuffer,
+      normalBuffer,
+      instanceBuffer,
+      indexBuffer,
+      indexType: geometry.indexFormat === 'uint16' ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT,
+      instanceCount: 0,
+      staticUploaded: false,
+    };
+  }
+
+  private destroyBatchResources(resources: BatchResources): void {
+    const gl = this.gl;
+    gl.deleteBuffer(resources.positionBuffer);
+    gl.deleteBuffer(resources.normalBuffer);
+    gl.deleteBuffer(resources.instanceBuffer);
+    gl.deleteBuffer(resources.indexBuffer);
+    gl.deleteVertexArray(resources.vao);
   }
 
   private createShader(type: number, source: string): WebGLShader {

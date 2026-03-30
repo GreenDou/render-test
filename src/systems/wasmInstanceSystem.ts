@@ -12,11 +12,24 @@ type InstanceUpdateWasmInstance = WebAssembly.Instance & {
   exports: WebAssembly.Exports & InstanceUpdateWasmExports;
 };
 
+let instanceUpdateModulePromise: Promise<WebAssembly.Module> | null = null;
+
+async function getInstanceUpdateModule(): Promise<WebAssembly.Module> {
+  if (!instanceUpdateModulePromise) {
+    instanceUpdateModulePromise = (async () => {
+      const response = await fetch(instanceUpdateWasmUrl);
+      const bytes = await response.arrayBuffer();
+      return WebAssembly.compile(bytes);
+    })();
+  }
+
+  return instanceUpdateModulePromise;
+}
+
 export class WasmInstanceSystem implements InstanceSystem {
   static async create(count: number, scaleBase: number): Promise<WasmInstanceSystem> {
-    const response = await fetch(instanceUpdateWasmUrl);
-    const bytes = await response.arrayBuffer();
-    const { instance } = await WebAssembly.instantiate(bytes, {});
+    const module = await getInstanceUpdateModule();
+    const instance = await WebAssembly.instantiate(module, {});
     return new WasmInstanceSystem(instance as unknown as InstanceUpdateWasmInstance, count, scaleBase);
   }
 
