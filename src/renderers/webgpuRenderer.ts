@@ -64,6 +64,7 @@ const TIME_FLOAT_OFFSET = MODEL_VIEW_PROJECTION_FLOATS;
 const LIGHTING_FLOAT_OFFSET = TIME_FLOAT_OFFSET + 1;
 const UNIFORM_FLOAT_COUNT = 20;
 const UNIFORM_BUFFER_SIZE = UNIFORM_FLOAT_COUNT * Float32Array.BYTES_PER_ELEMENT;
+const RENDER_BUNDLE_BATCH_LIMIT = 2048;
 
 // 渲染器配置：继承自通用 RenderOptions，额外支持是否使用 render bundle
 export interface WebGPURendererOptions extends RenderOptions {
@@ -123,6 +124,7 @@ export class WebGPURenderer implements Renderer {
   private batchOrder: string[] = [];
   private renderBundle: GPURenderBundle | null = null;
   private renderBundleDirty = false;
+  private canUseRenderBundleForCurrentScene = true;
   // 深度纹理及其视图，用于 depth test
   private depthTexture: GPUTexture | null = null;
   private depthTextureView: GPUTextureView | null = null;
@@ -277,6 +279,11 @@ export class WebGPURenderer implements Renderer {
     }
     this.syncBatchResources(batches);
     this.batchOrder = nextOrder;
+    this.canUseRenderBundleForCurrentScene = this.useRenderBundles && this.batchOrder.length > 0 && this.batchOrder.length <= RENDER_BUNDLE_BATCH_LIMIT;
+    if (!this.canUseRenderBundleForCurrentScene) {
+      this.renderBundle = null;
+      this.renderBundleEntries.length = 0;
+    }
 
     // 遍历批次，上传或更新实例数据
     for (const batch of batches) {
@@ -331,7 +338,7 @@ export class WebGPURenderer implements Renderer {
     this.renderPassDescriptor.depthStencilAttachment!.view = this.depthTextureView!;
     const renderPass = commandEncoder.beginRenderPass(this.renderPassDescriptor);
 
-    if (this.useRenderBundles) {
+    if (this.canUseRenderBundleForCurrentScene) {
       // 使用 render bundle：先确保 bundle 已生成或已刷新
       this.ensureRenderBundle();
       if (this.renderBundleEntries.length > 0) {
@@ -515,7 +522,7 @@ export class WebGPURenderer implements Renderer {
    * render bundle 对于不频繁变更的绘制序列能极大减少每帧的命令编码开销。
    */
   private ensureRenderBundle(): void {
-    if (!this.useRenderBundles) {
+    if (!this.canUseRenderBundleForCurrentScene) {
       return;
     }
 

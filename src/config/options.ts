@@ -78,7 +78,7 @@ export const FIELD_HELP: Record<ControlFieldKey, FieldHelpDefinition> = {
   },
   useRenderBundles: {
     label: 'RenderBundle',
-    description: '仅对 WebGPU 生效。开启后会预录制 draw / bind 等命令，以观察是否能减轻命令编码抖动。',
+    description: '仅对 WebGPU 生效。开启后会预录制 draw / bind 等命令；但在极端超大批次数场景下，渲染器会自动回退到逐帧编码以避免反向退化。',
   },
   lightingEnabled: {
     label: '光照着色',
