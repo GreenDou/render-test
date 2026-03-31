@@ -57,13 +57,8 @@ export interface AppElements {
   scaleSelect: HTMLSelectElement;
   fieldOptionNotes: Record<ControlFieldKey, HTMLDivElement>;
   fpsChart: HTMLCanvasElement;
-  fpsValue: HTMLDivElement;
-  fpsMetaValue: HTMLDivElement;
-  frameValue: HTMLDivElement;
-  updateValue: HTMLDivElement;
-  renderValue: HTMLDivElement;
-  drawCallsValue: HTMLDivElement;
-  uploadValue: HTMLDivElement;
+  fpsValue: HTMLSpanElement;
+  drawCallsValue: HTMLSpanElement;
   modeChip: HTMLDivElement;
   rendererChip: HTMLDivElement;
   meshChip: HTMLDivElement;

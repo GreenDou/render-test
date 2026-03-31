@@ -23,10 +23,8 @@ import { getCodePanelData } from '../ui/codeCases';
 import { createFreshCanvas, syncFieldOptionNotes } from './dom';
 import {
   escapeHtml,
-  formatDurationMs,
   formatError,
   formatFpsWithJitter,
-  formatUploadBytes,
 } from './formatting';
 import { drawFramePaceChart, pushFramePaceSample, summarizeFramePace } from './framePace';
 import { applySavedConfig, persistConfig, readConfigFromElements } from './persistence';
@@ -748,21 +746,12 @@ export class AppController {
   }
 
   private syncMetricsHud(): void {
-    this.syncSceneChip();
     drawFramePaceChart(this.elements.fpsChart, this.state.framePaceSamples);
     const summary = summarizeFramePace(this.state.framePaceSamples);
 
     this.elements.fpsValue.textContent =
-      summary.sampleCount > 0 ? `${formatFpsWithJitter(summary.averageFps, this.state.framePaceSamples)} FPS` : '--';
-    this.elements.fpsMetaValue.textContent =
-      summary.sampleCount > 0
-        ? `最新 ${formatDurationMs(summary.latestFrameMs)} · P95 ${formatDurationMs(summary.p95FrameMs)} · 长帧 ${summary.longFrameCount}/${summary.sampleCount}`
-        : '高柱代表长帧 / 掉帧';
-    this.elements.frameValue.textContent = formatDurationMs(this.state.metricWindowFrameCost);
-    this.elements.updateValue.textContent = formatDurationMs(this.state.metricWindowUpdateCost);
-    this.elements.renderValue.textContent = this.state.renderer ? formatDurationMs(this.state.metricWindowRenderCost) : '--';
+      summary.sampleCount > 0 ? formatFpsWithJitter(summary.averageFps) : '--';
     this.elements.drawCallsValue.textContent = `${this.state.metricWindowDrawCalls}`;
-    this.elements.uploadValue.textContent = formatUploadBytes(this.state.metricWindowUploadBytes);
   }
 
   private updateMetrics(frameMs: number, computeMs: number, renderMs: number): void {

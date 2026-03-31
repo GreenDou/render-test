@@ -68,18 +68,6 @@ export function formatUploadBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)}MB`;
 }
 
-export function formatFpsWithJitter(fps: number, samples: number[]): string {
-  if (samples.length === 0) {
-    return fps.toFixed(1);
-  }
-
-  const average = samples.reduce((sum, value) => sum + value, 0) / samples.length;
-  const variance = samples.reduce((sum, value) => sum + (value - average) ** 2, 0) / samples.length;
-  const sigma = Math.sqrt(variance);
-
-  if (sigma < 0.5) {
-    return fps.toFixed(1);
-  }
-
-  return `${fps.toFixed(1)} (±${sigma.toFixed(1)}ms)`;
+export function formatFpsWithJitter(fps: number): string {
+  return fps.toFixed(1);
 }

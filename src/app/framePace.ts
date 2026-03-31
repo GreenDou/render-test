@@ -1,7 +1,7 @@
 const TARGET_FRAME_MS = 1000 / 60;
 const LONG_FRAME_MS = 1000 / 30;
 const MAX_VISIBLE_FRAME_MS = 120;
-const HISTORY_LIMIT = 300;
+const HISTORY_LIMIT = 240;
 
 export interface FramePaceSummary {
   averageFps: number;
@@ -58,8 +58,8 @@ export function drawFramePaceChart(canvas: HTMLCanvasElement, samples: readonly 
     return;
   }
 
-  const cssWidth = Math.max(180, Math.round(canvas.clientWidth || 0));
-  const cssHeight = Math.max(72, Math.round(canvas.clientHeight || 0));
+  const cssWidth = Math.max(96, Math.round(canvas.clientWidth || 0));
+  const cssHeight = Math.max(32, Math.round(canvas.clientHeight || 0));
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const backingWidth = Math.max(1, Math.round(cssWidth * dpr));
   const backingHeight = Math.max(1, Math.round(cssHeight * dpr));
@@ -94,8 +94,6 @@ export function drawFramePaceChart(canvas: HTMLCanvasElement, samples: readonly 
 
   if (samples.length === 0) {
     context.fillStyle = 'rgba(151, 167, 199, 0.9)';
-    context.font = '12px Inter, sans-serif';
-    context.fillText('等待帧数据…', 10, cssHeight / 2 + 4);
     return;
   }
 

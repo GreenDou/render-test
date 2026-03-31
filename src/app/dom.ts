@@ -83,7 +83,20 @@ const APP_TEMPLATE = `
         </div>
         <div class="menu-bar-title-group">
           <h1>Render Test</h1>
-          <p class="menu-bar-subtitle">全屏渲染视图 + 实时性能 HUD</p>
+        </div>
+      </div>
+
+      <div class="menu-bar-hud" aria-live="polite">
+        <div class="menu-bar-metric menu-bar-metric-fps">
+          <div class="menu-bar-metric-copy">
+            <span class="menu-bar-metric-label">FPS</span>
+            <span class="menu-bar-metric-value" id="fpsValue">--</span>
+          </div>
+          <canvas class="menu-bar-fps-chart" id="fpsChart" height="32" aria-label="最近帧时间图表"></canvas>
+        </div>
+        <div class="menu-bar-metric menu-bar-metric-drawcalls">
+          <span class="menu-bar-metric-label">Draw Calls</span>
+          <span class="menu-bar-metric-value" id="drawCallsValue">--</span>
         </div>
       </div>
 
@@ -104,51 +117,13 @@ const APP_TEMPLATE = `
         <button class="ghost-btn canvas-only-exit hidden" id="exitCanvasOnlyBtn" type="button">退出纯 Canvas</button>
       </div>
 
-      <aside class="hud-panel" aria-live="polite">
-        <div class="hud-panel-header">
-          <div>
-            <div class="hud-panel-title">Rendering HUD</div>
-            <div class="hud-panel-copy">像 DevTools 一样，把帧时间和渲染开销贴在左上角观察。</div>
-          </div>
-          <div class="hud-chip-stack">
-            <div class="chip chip-compact" id="rendererChip">实际渲染：--</div>
-            <div class="chip chip-compact" id="statusChip">状态：初始化中</div>
-          </div>
-        </div>
-
-        <canvas class="stat-chart hud-chart" id="fpsChart" height="78" aria-label="最近帧时间图表"></canvas>
-        <div class="stat-value stat-value-compact" id="fpsValue">--</div>
-        <div class="stat-meta" id="fpsMetaValue">高柱代表长帧 / 掉帧</div>
-
-        <div class="hud-metrics">
-          <div class="hud-metric-card">
-            <div class="stat-label">Frame</div>
-            <div class="stat-value hud-stat-value" id="frameValue">--</div>
-          </div>
-          <div class="hud-metric-card">
-            <div class="stat-label">Update</div>
-            <div class="stat-value hud-stat-value" id="updateValue">--</div>
-          </div>
-          <div class="hud-metric-card">
-            <div class="stat-label">Render</div>
-            <div class="stat-value hud-stat-value" id="renderValue">--</div>
-          </div>
-          <div class="hud-metric-card">
-            <div class="stat-label">Draw</div>
-            <div class="stat-value hud-stat-value" id="drawCallsValue">--</div>
-          </div>
-          <div class="hud-metric-card">
-            <div class="stat-label">Upload</div>
-            <div class="stat-value hud-stat-value" id="uploadValue">--</div>
-          </div>
-        </div>
-
-        <div class="hud-chip-row">
-          <div class="chip chip-compact" id="modeChip">模式：--</div>
-          <div class="chip chip-compact" id="meshChip">场景：--</div>
-          <div class="chip chip-compact" id="supportChip">WebGPU 支持：检测中</div>
-        </div>
-      </aside>
+      <div class="hidden" aria-hidden="true">
+        <div class="chip chip-compact" id="rendererChip">实际渲染：--</div>
+        <div class="chip chip-compact" id="statusChip">状态：初始化中</div>
+        <div class="chip chip-compact" id="modeChip">模式：--</div>
+        <div class="chip chip-compact" id="meshChip">场景：--</div>
+        <div class="chip chip-compact" id="supportChip">WebGPU 支持：检测中</div>
+      </div>
 
       <div class="settings-layer hidden" id="settingsLayer">
         <section class="panel settings-panel" aria-label="渲染选项面板">
@@ -156,7 +131,7 @@ const APP_TEMPLATE = `
             <div>
               <div class="settings-panel-eyebrow">Live Controls</div>
               <h2 class="settings-panel-title">渲染选项</h2>
-              <p class="settings-panel-copy">浮窗半透明覆盖在 canvas 上，方便边看效果边调参数。</p>
+              <p class="settings-panel-copy">设置集中放在这里，渲染画面本身不再被性能面板遮挡。</p>
             </div>
             <button class="ghost-btn settings-close-btn" id="closeSettingsBtn" type="button">关闭</button>
           </div>
@@ -366,13 +341,8 @@ export function mountApp(root: ParentNode = document): AppElements {
       cullingMode: queryRequired<HTMLDivElement>(app, '[data-option-note="cullingMode"]'),
     },
     fpsChart: queryRequired<HTMLCanvasElement>(app, '#fpsChart'),
-    fpsValue: queryRequired<HTMLDivElement>(app, '#fpsValue'),
-    fpsMetaValue: queryRequired<HTMLDivElement>(app, '#fpsMetaValue'),
-    frameValue: queryRequired<HTMLDivElement>(app, '#frameValue'),
-    updateValue: queryRequired<HTMLDivElement>(app, '#updateValue'),
-    renderValue: queryRequired<HTMLDivElement>(app, '#renderValue'),
-    drawCallsValue: queryRequired<HTMLDivElement>(app, '#drawCallsValue'),
-    uploadValue: queryRequired<HTMLDivElement>(app, '#uploadValue'),
+    fpsValue: queryRequired<HTMLSpanElement>(app, '#fpsValue'),
+    drawCallsValue: queryRequired<HTMLSpanElement>(app, '#drawCallsValue'),
     modeChip: queryRequired<HTMLDivElement>(app, '#modeChip'),
     rendererChip: queryRequired<HTMLDivElement>(app, '#rendererChip'),
     meshChip: queryRequired<HTMLDivElement>(app, '#meshChip'),

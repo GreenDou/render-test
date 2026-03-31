@@ -105,11 +105,63 @@ h1 {
   font-size: 1rem;
 }
 
-.menu-bar-subtitle {
-  margin: 3px 0 0;
-  color: #9fb0d3;
-  font-size: 0.78rem;
-  line-height: 1.4;
+.menu-bar-hud {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.menu-bar-metric {
+  min-height: 48px;
+  padding: 7px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.menu-bar-metric-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.menu-bar-metric-label {
+  color: #97a7c7;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.menu-bar-metric-value {
+  color: #f5f7fb;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.menu-bar-metric-fps {
+  min-width: 176px;
+}
+
+.menu-bar-metric-drawcalls {
+  min-width: 112px;
+  justify-content: space-between;
+}
+
+.menu-bar-fps-chart {
+  width: 96px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: block;
+  border-radius: 8px;
+  background: rgba(4, 8, 18, 0.56);
+  border: 1px solid rgba(125, 226, 255, 0.08);
 }
 
 .menu-bar-actions {
@@ -213,130 +265,6 @@ canvas {
   height: 100%;
   display: block;
   touch-action: none;
-}
-
-.hud-panel {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 3;
-  width: min(360px, calc(100vw - 36px));
-  padding: 12px;
-  border-radius: 16px;
-  background: rgba(4, 9, 18, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(18px);
-  pointer-events: none;
-}
-
-.hud-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.hud-panel-title {
-  font-size: 0.92rem;
-  font-weight: 700;
-  color: #f5f7fb;
-}
-
-.hud-panel-copy {
-  margin-top: 4px;
-  color: #94a8cf;
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-
-.hud-chip-stack,
-.hud-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.hud-chip-stack {
-  justify-content: flex-end;
-}
-
-.hud-chart {
-  margin-top: 10px;
-}
-
-.hud-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.hud-metric-card {
-  padding: 9px 10px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.hud-stat-value {
-  margin-top: 5px;
-  font-size: 0.92rem;
-}
-
-.hud-chip-row {
-  margin-top: 10px;
-}
-
-.stat-label {
-  font-size: 0.72rem;
-  color: #97a7c7;
-}
-
-.stat-value {
-  margin-top: 6px;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.stat-value-compact {
-  margin-top: 10px;
-  font-size: 0.98rem;
-}
-
-.stat-meta {
-  margin-top: 4px;
-  color: #94a8cf;
-  font-size: 0.76rem;
-  line-height: 1.4;
-}
-
-.stat-chart {
-  width: 100%;
-  height: 78px;
-  display: block;
-  border-radius: 10px;
-  background: rgba(4, 8, 18, 0.6);
-  border: 1px solid rgba(125, 226, 255, 0.08);
-}
-
-.chip {
-  padding: 8px 10px;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  background: rgba(4, 7, 14, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.chip-compact {
-  padding: 6px 10px;
-  font-size: 0.72rem;
-  line-height: 1.2;
-}
-
-.chip.warn {
-  color: #ffd28a;
-  border-color: rgba(255, 210, 138, 0.35);
 }
 
 .settings-layer {
@@ -753,7 +681,6 @@ canvas {
 }
 
 .app-shell.canvas-only-mode .menu-bar,
-.app-shell.canvas-only-mode .hud-panel,
 .app-shell.canvas-only-mode .settings-layer {
   display: none !important;
 }
@@ -776,8 +703,12 @@ canvas {
     align-items: flex-start;
   }
 
+  .menu-bar-hud,
   .menu-bar-actions {
     width: 100%;
+  }
+
+  .menu-bar-actions {
     justify-content: space-between;
   }
 }
@@ -798,8 +729,21 @@ canvas {
     justify-content: center;
   }
 
-  .hud-panel {
-    width: min(330px, calc(100vw - 32px));
+  .menu-bar-hud {
+    margin-left: 0;
+  }
+
+  .menu-bar-metric {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .menu-bar-metric-fps {
+    min-width: 0;
+  }
+
+  .menu-bar-fps-chart {
+    width: 84px;
   }
 
   .settings-layer {
@@ -826,14 +770,25 @@ canvas {
     padding-right: 10px;
   }
 
-  .hud-panel {
-    top: 10px;
-    left: 10px;
-    width: calc(100% - 20px);
+  .menu-bar-hud {
+    gap: 6px;
   }
 
-  .hud-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .menu-bar-metric {
+    padding: 7px 9px;
+  }
+
+  .menu-bar-metric-label {
+    font-size: 0.64rem;
+  }
+
+  .menu-bar-metric-value {
+    font-size: 0.86rem;
+  }
+
+  .menu-bar-fps-chart {
+    width: 72px;
+    height: 28px;
   }
 
   .field-help-tooltip {
